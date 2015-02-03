@@ -24,8 +24,26 @@ use std::old_io::IoResult;
 static TEST_BUFFER: &'static [u8] = b"my-secret\npassword";
 
 #[cfg(test)]
+static mut TEST_EOF: bool = false;
+
+#[cfg(test)]
+static mut TEST_HAS_SEEN_EOF_BUFFER: bool = false;
+
+#[cfg(test)]
+static mut TEST_HAS_SEEN_REGULAR_BUFFER: bool = false;
+
+
+#[cfg(test)]
 fn get_reader() -> BufReader<'static> {
-    BufReader::new(TEST_BUFFER)
+    if unsafe { TEST_EOF } {
+        unsafe { TEST_HAS_SEEN_EOF_BUFFER = true; }
+        let mut reader = BufReader::new(b"");
+        reader.read_to_end().unwrap();
+        reader
+    } else {
+        unsafe { TEST_HAS_SEEN_REGULAR_BUFFER = true; }
+        BufReader::new(TEST_BUFFER)
+    }
 }
 
 #[cfg(not(test))]
@@ -49,14 +67,15 @@ pub fn read_password() -> IoResult<String> {
     // Save the settings for now.
     try!(termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term));
 
-    // Read the password and remove the NL character from the end of the line.
-    let mut input = get_reader();
-    let mut password = try!(input.read_line());
-    password.pop().unwrap();
+    // Read the password.
+    let maybe_password = get_reader().read_line();
 
-    // Set back the terminal to the original state.
+    // Reset the terminal and quit.
     try!(termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term_orig));
 
+    // Remove the \n from the line.
+    let mut password = try!(maybe_password);
+    password.pop().unwrap();
     Ok(password)
 }
 
@@ -66,4 +85,10 @@ fn it_works() {
     assert_eq!(read_password().unwrap().as_slice(), "my-secret");
     let term_after = termios::Termios::from_fd(STDIN_FILENO).unwrap();
     assert_eq!(term_before, term_after);
+    unsafe { TEST_EOF = true; }
+    assert!(!read_password().is_ok());
+    let term_after = termios::Termios::from_fd(STDIN_FILENO).unwrap();
+    assert_eq!(term_before, term_after);
+    assert!(unsafe { TEST_HAS_SEEN_REGULAR_BUFFER });
+    assert!(unsafe { TEST_HAS_SEEN_EOF_BUFFER });
 }
