@@ -1,0 +1,13 @@
+[package]
+
+name = "rpassword"
+version = "0.0.1"
+authors = ["Conrad Kleinespel <conradk@conradk.com>"]
+description = "Read passwords in console applications."
+license = "Apache-2.0"
+homepage = "https://github.com/conradkleinespel/rustastic-password"
+readme = "README.md"
+keywords = ["read", "password"]
+
+[dependencies.termios]
+git = "https://github.com/conradkleinespel/termios-rs.git"
