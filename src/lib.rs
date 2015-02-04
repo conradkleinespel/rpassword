@@ -19,6 +19,7 @@ use libc::consts::os::posix88::STDIN_FILENO;
 use std::old_io::stdio::{ stdin, StdinReader };
 use std::old_io::BufReader;
 use std::old_io::IoResult;
+use std::slice::bytes::MutableByteVector;
 
 #[cfg(test)]
 static TEST_BUFFER: &'static [u8] = b"my-secret\npassword";
@@ -68,14 +69,29 @@ pub fn read_password() -> IoResult<String> {
     try!(termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term));
 
     // Read the password.
-    let maybe_password = get_reader().read_line();
+    let mut password = match get_reader().read_line() {
+        Ok(val) => { val },
+        Err(err) => {
+            // Reset the terminal and quit.
+            try!(termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term_orig));
+
+            // Return the original IoError.
+            return Err(err);
+        }
+    };
 
     // Reset the terminal and quit.
-    try!(termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term_orig));
+    match termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term_orig) {
+        Ok(_) => {},
+        Err(err) => {
+            unsafe { password.as_mut_vec() }.set_memory(0);
+            return Err(err);
+        }
+    }
 
     // Remove the \n from the line.
-    let mut password = try!(maybe_password);
     password.pop().unwrap();
+
     Ok(password)
 }
 
