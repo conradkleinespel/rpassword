@@ -9,5 +9,5 @@ homepage = "https://github.com/conradkleinespel/rustastic-password"
 readme = "README.md"
 keywords = ["read", "password"]
 
-[dependencies.termios]
-git = "https://github.com/conradkleinespel/termios-rs.git"
+[dependencies]
+termios = "0.0.2"
