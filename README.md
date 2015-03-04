@@ -25,3 +25,8 @@ fn main() {
     println!("The password is: '{}'", password);
 }
 ```
+
+## Contributors
+
+* @conradkleinespel
+* @retep998
