@@ -1,18 +1,19 @@
-
-#![feature(io)]
-
 extern crate rpassword;
 
-use std::old_io::stdio::{flush, stdin};
+use std::io::{stdout, Write, stdin, BufRead};
 
 fn main() {
+    let mut stdout = stdout();
+
     print!("Password: ");
-    flush();
+    stdout.flush().unwrap();
     let pass = rpassword::read_password().unwrap();
     println!("Your password is {:?}", pass);
-    let mut stdin = stdin();
+
+    let mut plaintext = String::new();
+    let stdin = stdin();
     print!("Plaintext: ");
-    flush();
-    let line = stdin.read_line();
-    println!("Your plaintext is {:?}", line);
+    stdout.flush().unwrap();
+    stdin.lock().read_line(&mut plaintext).unwrap();
+    println!("Your plaintext is {:?}", plaintext);
 }
