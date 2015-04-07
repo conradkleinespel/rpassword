@@ -28,5 +28,6 @@ fn main() {
 
 ## Contributors
 
-* @conradkleinespel
-* @retep998
+* [@conradkleinespel](https://github.com/conradkleinespel)
+* [@dcuddeback](https://github.com/dcuddeback)
+* [@retep998](https://github.com/retep998)
