@@ -9,9 +9,6 @@ homepage = "https://github.com/conradkleinespel/rustastic-password"
 readme = "README.md"
 keywords = ["read", "password"]
 
-[dependencies.termios]
-# waiting for an update of termios to add this
-path = "../tios"
-
 [dependencies]
 libc = "0.1.5"
+termios = "0.0.5"
