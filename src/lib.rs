@@ -12,21 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg_attr(windows, feature(io))]
-
 #[cfg(not(windows))]
 mod unix {
     extern crate termios;
     extern crate libc;
 
     use self::libc::consts::os::posix88::STDIN_FILENO;
-    use std::old_io::stdio::{ stdin, StdinReader };
-    use std::old_io::BufReader;
-    use std::old_io::IoResult;
-    use std::slice::bytes::MutableByteVector;
+    use std::io::{ stdin, Stdin, BufReader, BufRead, Read, Error, ErrorKind };
+    use std::io::Result as IoResult;
+    use std::ptr;
+    use std::fs::File;
 
-    #[cfg(test)]
-    static TEST_BUFFER: &'static [u8] = b"my-secret\npassword";
+    /// A trait for operations on mutable `[u8]`s.
+    trait MutableByteVector {
+        /// Sets all bytes of the receiver to the given value.
+        fn set_memory(&mut self, value: u8);
+    }
+
+    impl MutableByteVector for Vec<u8> {
+        #[inline]
+        fn set_memory(&mut self, value: u8) {
+            unsafe { ptr::write_bytes(self.as_mut_ptr(), value, self.len()) };
+        }
+    }
 
     #[cfg(test)]
     static mut TEST_EOF: bool = false;
@@ -39,20 +47,18 @@ mod unix {
 
 
     #[cfg(test)]
-    fn get_reader() -> BufReader<'static> {
+    fn get_reader<'a>() -> BufReader<File> {
         if unsafe { TEST_EOF } {
             unsafe { TEST_HAS_SEEN_EOF_BUFFER = true; }
-            let mut reader = BufReader::new(b"");
-            reader.read_to_end().unwrap();
-            reader
+            BufReader::new(File::open("/dev/null").unwrap())
         } else {
             unsafe { TEST_HAS_SEEN_REGULAR_BUFFER = true; }
-            BufReader::new(TEST_BUFFER)
+            BufReader::new(File::open("tests/password").unwrap())
         }
     }
 
     #[cfg(not(test))]
-    fn get_reader() -> StdinReader {
+    fn get_reader() -> Stdin {
         stdin()
     }
 
@@ -73,8 +79,9 @@ mod unix {
         try!(termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term));
 
         // Read the password.
-        let mut password = match get_reader().read_line() {
-            Ok(val) => { val },
+        let mut password = String::new();
+        match get_reader().read_line(&mut password) {
+            Ok(_) => { },
             Err(err) => {
                 // Reset the terminal and quit.
                 try!(termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term_orig));
@@ -94,7 +101,10 @@ mod unix {
         }
 
         // Remove the \n from the line.
-        password.pop().unwrap();
+        match password.pop() {
+            Some(_) => {},
+            None => { return Err(Error::new(ErrorKind::Other, "oh no!")) }
+        };
 
         Ok(password)
     }
@@ -102,7 +112,7 @@ mod unix {
     #[test]
     fn it_works() {
         let term_before = termios::Termios::from_fd(STDIN_FILENO).unwrap();
-        assert_eq!(read_password().unwrap().as_slice(), "my-secret");
+        assert_eq!(read_password().unwrap(), "my-secret");
         let term_after = termios::Termios::from_fd(STDIN_FILENO).unwrap();
         assert_eq!(term_before, term_after);
         unsafe { TEST_EOF = true; }
@@ -113,60 +123,6 @@ mod unix {
         assert!(unsafe { TEST_HAS_SEEN_EOF_BUFFER });
     }
 }
-#[cfg(windows)]
-mod windows {
-    extern crate winapi;
-    extern crate "kernel32-sys" as kernel32;
-    use std::old_io::{IoError, IoErrorKind, IoResult};
-    use std::ptr::null_mut;
-    pub fn read_password() -> IoResult<String> {
-        // Get the stdin handle
-        let handle = unsafe { kernel32::GetStdHandle(winapi::STD_INPUT_HANDLE) };
-        if handle == winapi::INVALID_HANDLE_VALUE {
-            return Err(IoError::last_error())
-        }
-        let mut mode = 0;
-        // Get the old mode so we can reset back to it when we are done
-        if unsafe { kernel32::GetConsoleMode(handle, &mut mode as winapi::LPDWORD) } == 0 {
-            return Err(IoError::last_error())
-        }
-        // We want to be able to read line by line, and we still want backspace to work
-        if unsafe { kernel32::SetConsoleMode(
-            handle, winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT,
-        ) } == 0 {
-            return Err(IoError::last_error())
-        }
-        // If your password is over 0x1000 characters you have paranoia problems
-        let mut buf: [winapi::WCHAR; 0x1000] = [0; 0x1000];
-        let mut read = 0;
-        // Read a line of stuff from the console
-        if unsafe { kernel32::ReadConsoleW(
-            handle, buf.as_mut_ptr() as winapi::LPVOID, 0x1000,
-            &mut read as winapi::LPDWORD, null_mut(),
-        ) } == 0 {
-            let err = IoError::last_error();
-            // Even if we failed to read we should still try to set the mode back
-            unsafe { kernel32::SetConsoleMode(handle, mode) };
-            return Err(err)
-        }
-        // Set the the mode back to normal
-        if unsafe { kernel32::SetConsoleMode(handle, mode) } == 0 {
-            return Err(IoError::last_error())
-        }
-        // Since the newline isn't echo'd we need to do it ourselves
-        println!("");
-        // Subtract 2 to get rid of \r\n
-        match String::from_utf16(&buf[..read as usize - 2]) {
-            Ok(s) => Ok(s),
-            Err(_) => Err(IoError {
-                kind: IoErrorKind::InvalidInput,
-                desc: "invalid UTF-16",
-                detail: None,
-            }),
-        }
-    }
-}
+
 #[cfg(not(windows))]
 pub use unix::read_password;
-#[cfg(windows)]
-pub use windows::read_password;

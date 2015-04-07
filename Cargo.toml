@@ -1,7 +1,7 @@
 [package]
 
 name = "rpassword"
-version = "0.0.2"
+version = "0.0.4"
 authors = ["Conrad Kleinespel <conradk@conradk.com>"]
 description = "Read passwords in console applications."
 license = "Apache-2.0"
@@ -9,27 +9,9 @@ homepage = "https://github.com/conradkleinespel/rustastic-password"
 readme = "README.md"
 keywords = ["read", "password"]
 
-[target.i686-apple-darwin.dependencies]
-termios = "0.0.2"
-[target.x86_64-apple-darwin.dependencies]
-termios = "0.0.2"
-[target.i686-unknown-linux-gnu.dependencies]
-termios = "0.0.2"
-[target.x86_64-unknown-linux-gnu.dependencies]
-termios = "0.0.2"
-[target.aarch64-unknown-linux-gnu.dependencies]
-termios = "0.0.2"
-[target.arm-unknown-linux-gnueabihf.dependencies]
-termios = "0.0.2"
-[target.i686-unknown-freebsd.dependencies]
-termios = "0.0.2"
-[target.x86_64-unknown-freebsd.dependencies]
-termios = "0.0.2"
-[target.x86_64-unknown-dragonfly.dependencies]
-termios = "0.0.2"
-[target.i686-pc-windows-gnu.dependencies]
-winapi = "*"
-kernel32-sys = "*"
-[target.x86_64-pc-windows-gnu.dependencies]
-winapi = "*"
-kernel32-sys = "*"
+[dependencies.termios]
+# waiting for an update of termios to add this
+path = "../tios"
+
+[dependencies]
+libc = "0.1.5"
