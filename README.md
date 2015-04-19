@@ -9,7 +9,7 @@ Add termios as a dependency in Cargo.toml:
 
 ```toml
 [dependencies]
-rpassword = "0.0.2"
+rpassword = "0.0.3"
 ```
 
 Import the `rpassword` crate and use the `read_password()` function:
