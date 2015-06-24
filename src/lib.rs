@@ -124,5 +124,59 @@ mod unix {
     }
 }
 
+#[cfg(windows)]
+mod windows {
+    extern crate winapi;
+    extern crate kernel32;
+    use std::io::{ Error, ErrorKind };
+    use std::io::Result as IoResult;
+    use std::ptr::null_mut;
+
+    pub fn read_password() -> IoResult<String> {
+        // Get the stdin handle
+        let handle = unsafe { kernel32::GetStdHandle(winapi::STD_INPUT_HANDLE) };
+        if handle == winapi::INVALID_HANDLE_VALUE {
+            return Err(Error::last_os_error())
+        }
+        let mut mode = 0;
+        // Get the old mode so we can reset back to it when we are done
+        if unsafe { kernel32::GetConsoleMode(handle, &mut mode as winapi::LPDWORD) } == 0 {
+            return Err(Error::last_os_error())
+        }
+        // We want to be able to read line by line, and we still want backspace to work
+        if unsafe { kernel32::SetConsoleMode(
+            handle, winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT,
+        ) } == 0 {
+            return Err(Error::last_os_error())
+        }
+        // If your password is over 0x1000 characters you have paranoia problems
+        let mut buf: [winapi::WCHAR; 0x1000] = [0; 0x1000];
+        let mut read = 0;
+        // Read a line of stuff from the console
+        if unsafe { kernel32::ReadConsoleW(
+            handle, buf.as_mut_ptr() as winapi::LPVOID, 0x1000,
+            &mut read, null_mut(),
+        ) } == 0 {
+            let err = Error::last_os_error();
+            // Even if we failed to read we should still try to set the mode back
+            unsafe { kernel32::SetConsoleMode(handle, mode) };
+            return Err(err)
+        }
+        // Set the the mode back to normal
+        if unsafe { kernel32::SetConsoleMode(handle, mode) } == 0 {
+            return Err(Error::last_os_error())
+        }
+        // Since the newline isn't echo'd we need to do it ourselves
+        println!("");
+        // Subtract 2 to get rid of \r\n
+        match String::from_utf16(&buf[..read as usize - 2]) {
+            Ok(s) => Ok(s),
+            Err(_) => Err(Error::new(ErrorKind::InvalidInput, "invalid UTF-16")),
+         }
+    }
+}
+
 #[cfg(not(windows))]
 pub use unix::read_password;
+#[cfg(windows)]
+pub use windows::read_password;

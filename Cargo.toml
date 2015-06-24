@@ -9,6 +9,42 @@ homepage = "https://github.com/conradkleinespel/rustastic-password"
 readme = "README.md"
 keywords = ["read", "password"]
 
-[dependencies]
+[target.i686-apple-darwin.dependencies]
 libc = "0.1.5"
 termios = "0.0.5"
+[target.x86_64-apple-darwin.dependencies]
+libc = "0.1.5"
+termios = "0.0.5"
+[target.i686-unknown-linux-gnu.dependencies]
+libc = "0.1.5"
+termios = "0.0.5"
+[target.x86_64-unknown-linux-gnu.dependencies]
+libc = "0.1.5"
+termios = "0.0.5"
+[target.aarch64-unknown-linux-gnu.dependencies]
+libc = "0.1.5"
+termios = "0.0.5"
+[target.arm-unknown-linux-gnueabihf.dependencies]
+libc = "0.1.5"
+termios = "0.0.5"
+[target.i686-unknown-freebsd.dependencies]
+libc = "0.1.5"
+termios = "0.0.5"
+[target.x86_64-unknown-freebsd.dependencies]
+libc = "0.1.5"
+termios = "0.0.5"
+[target.x86_64-unknown-dragonfly.dependencies]
+libc = "0.1.5"
+termios = "0.0.5"
+[target.i686-pc-windows-gnu.dependencies]
+winapi = "0.2.0"
+kernel32-sys = "0.1.2"
+[target.x86_64-pc-windows-gnu.dependencies]
+winapi = "0.2.0"
+kernel32-sys = "0.1.2"
+[target.i686-pc-windows-msvc.dependencies]
+winapi = "0.2.0"
+kernel32-sys = "0.1.2"
+[target.x86_64-pc-windows-msvc.dependencies]
+winapi = "0.2.0"
+kernel32-sys = "0.1.2"
