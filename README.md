@@ -30,4 +30,5 @@ fn main() {
 
 * [@conradkleinespel](https://github.com/conradkleinespel)
 * [@dcuddeback](https://github.com/dcuddeback)
+* [@equalsraf](https://github.com/equalsraf)
 * [@retep998](https://github.com/retep998)
