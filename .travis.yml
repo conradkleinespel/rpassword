@@ -6,3 +6,6 @@ install:
   - sudo apt-get install -qq rust-stable cargo
 script:
   - cargo build
+notifications:
+  email:
+    - conradk@conradk.com
