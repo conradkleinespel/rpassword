@@ -1,3 +1,6 @@
+env:
+  global:
+    - secure: VJgobCV+x42AXaW1STjGL4JeuAND32rZOuP5WsxNndNB9eDHw7MjIppKTJ3kfbCl7KhzJ742aBRy3tHEA9dDf99KdiBoap2XYxX2scdGjqa3ukaAfeaYCyLpNcoioBkiRqvMSFtyEExU1Flzu7OqezZEYM57pV7RSvs+adaLU+I=
 before_install:
   - sudo add-apt-repository --yes ppa:hansjorg/rust
   - sudo add-apt-repository --yes ppa:cmrx64/cargo
@@ -9,3 +12,5 @@ script:
 notifications:
   email:
     - conradk@conradk.com
+after_script:
+  - curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
