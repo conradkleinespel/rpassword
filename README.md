@@ -1,6 +1,6 @@
 # Rustastic Password
 
-![](https://travis-ci.org/conradkleinespel/rustastic-password.svg?branch=master)
+[![Build status](https://travis-ci.org/conradkleinespel/rustastic-password.svg?branch=master)](https://travis-ci.org/conradkleinespel/rustastic-password)
 [![Build status](https://ci.appveyor.com/api/projects/status/812odw3tw6oec5sw/branch/master?svg=true)](https://ci.appveyor.com/project/conradkleinespel/rustastic-password/branch/master)
 
 This [Rust](http://www.rust-lang.org/) package allows you to safely read
