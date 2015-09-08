@@ -1,13 +1,14 @@
 [package]
 
 name = "rpassword"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["Conrad Kleinespel <conradk@conradk.com>"]
 description = "Read passwords in console applications."
 license = "Apache-2.0"
 homepage = "https://github.com/conradkleinespel/rustastic-password"
+repository = "https://github.com/conradkleinespel/rustastic-password"
 readme = "README.md"
-keywords = ["read", "password"]
+keywords = ["read", "password", "security", "windows", "linux", "pass", "getpass"]
 
 [target.i686-apple-darwin.dependencies]
 libc = "0.1.5"
