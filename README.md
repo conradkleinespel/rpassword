@@ -8,7 +8,7 @@ passwords from standard input in a console application.
 
 ## Usage
 
-Add termios as a dependency in Cargo.toml:
+Add `rpassword` as a dependency in Cargo.toml:
 
 ```toml
 [dependencies]
