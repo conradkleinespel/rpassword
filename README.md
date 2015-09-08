@@ -1,5 +1,7 @@
 # Rustastic Password
 
+![](https://travis-ci.org/conradkleinespel/rustastic-password.svg?branch=master)
+
 This [Rust](http://www.rust-lang.org/) package allows you to safely read
 passwords from standard input in a console application.
 
