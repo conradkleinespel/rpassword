@@ -6,6 +6,8 @@
 This [Rust](http://www.rust-lang.org/) package allows you to safely read
 passwords from standard input in a console application.
 
+You can build the documentation with `cargo doc` or [view it online](http://conradk.com/rustastic-password/target/doc/rpassword/).
+
 ## Usage
 
 Add `rpassword` as a dependency in Cargo.toml:
