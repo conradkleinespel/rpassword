@@ -5,4 +5,4 @@ language: rust
 rust:
   - 1.2.0
 after_script:
-  - curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
+  - cargo doc && curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
