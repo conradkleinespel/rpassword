@@ -18,10 +18,15 @@ mod unix {
     extern crate libc;
 
     use self::libc::consts::os::posix88::STDIN_FILENO;
-    use std::io::{ stdin, Stdin, BufReader, BufRead, Read, Error, ErrorKind };
+    use std::io::{ BufRead, Error, ErrorKind };
     use std::io::Result as IoResult;
     use std::ptr;
+	#[cfg(not(test))]
+	use std::io::{stdin, Stdin};
+	#[cfg(test)]
     use std::fs::File;
+	#[cfg(test)]
+	use std::io::{BufReader};
 
     /// A trait for operations on mutable `[u8]`s.
     trait MutableByteVector {
