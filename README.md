@@ -25,7 +25,7 @@ extern crate rpassword;
 use rpassword::read_password;
 
 fn main() {
-    print!("Type a password: ");
+    println!("Type a password: ");
     let password = read_password().unwrap();
     println!("The password is: '{}'", password);
 }
@@ -36,4 +36,5 @@ fn main() {
 * [@conradkleinespel](https://github.com/conradkleinespel)
 * [@dcuddeback](https://github.com/dcuddeback)
 * [@equalsraf](https://github.com/equalsraf)
+* [@JanLikar](https://github.com/JanLikar)
 * [@retep998](https://github.com/retep998)
