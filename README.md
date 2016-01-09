@@ -6,7 +6,7 @@
 This [Rust](http://www.rust-lang.org/) package allows you to safely read
 passwords from standard input in a console application.
 
-You can build the documentation with `cargo doc` or [view it online](http://conradk.com/docs/rustastic-password/).
+You can build the documentation with `cargo doc` or [view it online](https://conradk.com/docs/rustastic-password/).
 
 The source code is released under the MIT license.
 
