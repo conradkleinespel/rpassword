@@ -28,6 +28,9 @@ termios = "0.2"
 [target.arm-unknown-linux-gnueabihf.dependencies]
 libc = "0.1"
 termios = "0.2"
+[target.arm-unknown-linux-gnueabi.dependencies]
+libc = "0.1"
+termios = "0.2"
 [target.mipsel-unknown-linux-gnu.dependencies]
 libc = "0.1"
 termios = "0.2"
