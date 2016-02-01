@@ -17,7 +17,7 @@ mod unix {
     extern crate termios;
     extern crate libc;
 
-    use self::libc::consts::os::posix88::STDIN_FILENO;
+    use self::libc::STDIN_FILENO;
     use std::io::{ BufRead, Error, ErrorKind };
     use std::io::Result as IoResult;
     use std::ptr;
