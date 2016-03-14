@@ -108,7 +108,7 @@ mod unix {
         // Remove the \n from the line.
         match password.pop() {
             Some(_) => {},
-            None => { return Err(Error::new(ErrorKind::Other, "oh no!")) }
+            None => { return Err(Error::new(ErrorKind::UnexpectedEof, "unexpected end of file")) }
         };
 
         Ok(password)
