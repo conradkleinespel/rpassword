@@ -41,5 +41,6 @@ fn main() {
 * [@dcuddeback](https://github.com/dcuddeback)
 * [@equalsraf](https://github.com/equalsraf)
 * [@JanLikar](https://github.com/JanLikar)
+* [@petevine](https://github.com/petevine)
 * [@psych0d0g](https://github.com/psych0d0g)
 * [@retep998](https://github.com/retep998)
