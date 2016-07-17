@@ -1,4 +1,4 @@
-// Copyright 2014 The Rustastic Password Developers
+// Copyright 2014-2016 The Rustastic Password Developers
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,15 +18,15 @@ mod unix {
     extern crate libc;
 
     use self::libc::STDIN_FILENO;
-    use std::io::{ BufRead, Error, ErrorKind };
+    use std::io::{ Error, ErrorKind };
     use std::io::Result as IoResult;
     use std::ptr;
-	#[cfg(not(test))]
-	use std::io::{stdin, Stdin};
-	#[cfg(test)]
+    #[cfg(not(test))]
+    use std::io::{stdin, Stdin};
+    #[cfg(test)]
     use std::fs::File;
-	#[cfg(test)]
-	use std::io::{BufReader};
+    #[cfg(test)]
+    use std::io::{BufRead, BufReader};
 
     /// A trait for operations on mutable `[u8]`s.
     trait MutableByteVector {

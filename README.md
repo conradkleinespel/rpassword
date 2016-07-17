@@ -8,7 +8,7 @@ passwords from standard input in a console application.
 
 You can build the documentation with `cargo doc` or [view it online](https://conradk.com/docs/rustastic-password/).
 
-The source code is released under the MIT license.
+The source code is released under the Apache 2.0 license.
 
 I'd appreciate feedback if you use this library :-)
 
