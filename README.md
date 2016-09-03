@@ -29,11 +29,12 @@ extern crate rpassword;
 use rpassword::read_password;
 
 fn main() {
-    println!("Type a password: ");
-    let password = read_password().unwrap();
-    println!("The password is: '{}'", password);
+    let pass = rpassword::prompt_password_stdout("Password: ").unwrap();
+    println!("Your password is {}", pass);
 }
 ```
+
+Check [examples/example.rs](examples/example.rs) for a few more examples.
 
 ## Contributors
 

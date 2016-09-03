@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::io::Write;
+
 #[cfg(not(windows))]
 mod unix {
     extern crate termios;
@@ -67,6 +69,7 @@ mod unix {
         stdin()
     }
 
+    /// Reads a password from STDIN.
     pub fn read_password() -> IoResult<String> {
         // Make two copies of the terminal settings. The first one will be modified
         // and the second one will act as a backup for when we want to set the
@@ -137,6 +140,7 @@ mod windows {
     use std::io::Result as IoResult;
     use std::ptr::null_mut;
 
+    /// Reads a password from STDIN.
     pub fn read_password() -> IoResult<String> {
         // Get the stdin handle
         let handle = unsafe { kernel32::GetStdHandle(winapi::STD_INPUT_HANDLE) };
@@ -185,3 +189,21 @@ mod windows {
 pub use unix::read_password;
 #[cfg(windows)]
 pub use windows::read_password;
+
+/// Prompts for a password on STDOUT and reads it from STDIN.
+pub fn prompt_password_stdout(prompt: &str) -> std::io::Result<String> {
+    let mut stdout = std::io::stdout();
+
+    try!(write!(stdout, "{}", prompt));
+    try!(stdout.flush());
+    read_password()
+}
+
+/// Prompts for a password on STDERR and reads it from STDIN.
+pub fn prompt_password_stderr(prompt: &str) -> std::io::Result<String> {
+    let mut stderr = std::io::stderr();
+
+    try!(write!(stderr, "{}", prompt));
+    try!(stderr.flush());
+    read_password()
+}

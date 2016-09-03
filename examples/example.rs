@@ -9,4 +9,10 @@ fn main() {
     stdout.flush().unwrap();
     let pass = rpassword::read_password().unwrap();
     println!("Your password is {}", pass);
+
+    let pass = rpassword::prompt_password_stdout("Password: ").unwrap();
+    println!("Your password is {}", pass);
+
+    let pass = rpassword::prompt_password_stderr("Password: ").unwrap();
+    println!("Your password is {}", pass);
 }
