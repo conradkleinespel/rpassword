@@ -21,7 +21,7 @@ Add `rpassword` as a dependency in Cargo.toml:
 rpassword = "0.2"
 ```
 
-Import the `rpassword` crate and use the `read_password()` function:
+Import the `rpassword` crate and use the `promt_password_stdout()` function to show a message on `stdout` and read a password into a `String`:
 
 ```rust
 extern crate rpassword;
