@@ -18,7 +18,7 @@ Add `rpassword` as a dependency in Cargo.toml:
 
 ```toml
 [dependencies]
-rpassword = "0.2"
+rpassword = "0.3"
 ```
 
 Import the `rpassword` crate and use the `promt_password_stdout()` function to show a message on `stdout` and read a password into a `String`:
