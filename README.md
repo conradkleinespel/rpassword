@@ -38,6 +38,7 @@ Check [examples/example.rs](examples/example.rs) for a few more examples.
 
 ## Contributors
 
+* [@C4K3](https://github.com/C4K3)
 * [@conradkleinespel](https://github.com/conradkleinespel)
 * [@dcuddeback](https://github.com/dcuddeback)
 * [@equalsraf](https://github.com/equalsraf)
