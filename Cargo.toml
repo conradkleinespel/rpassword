@@ -7,6 +7,7 @@ description = "Read passwords in console applications."
 license = "Apache-2.0"
 homepage = "https://github.com/conradkleinespel/rustastic-password"
 repository = "https://github.com/conradkleinespel/rustastic-password"
+documentation = "https://docs.rs/rpassword/"
 readme = "README.md"
 keywords = ["read", "password", "security", "pass", "getpass"]
 
