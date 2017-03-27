@@ -18,7 +18,7 @@ Add `rpassword` as a dependency in Cargo.toml:
 
 ```toml
 [dependencies]
-rpassword = "0.3"
+rpassword = "0.4"
 ```
 
 Import the `rpassword` crate and use the `promt_password_stdout()` to show a message on `stdout` and read a password into a `String`:
@@ -43,6 +43,17 @@ fn main() {
 }
 ```
 
+Finally, you can read strings with a single line, and without the terminating
+newline that `read_line` would add:
+```rust
+extern crate rpassword;
+
+fn main() {
+    let response = rpassword::read_response().unwrap();
+    println!("Your response is {}", response);
+}
+```
+
 Check [examples/example.rs](examples/example.rs) for a few more examples.
 
 ## Contributors
@@ -55,3 +66,4 @@ Check [examples/example.rs](examples/example.rs) for a few more examples.
 * [@petevine](https://github.com/petevine)
 * [@psych0d0g](https://github.com/psych0d0g)
 * [@retep998](https://github.com/retep998)
+* [@steveatinfincia](https://github.com/steveatinfincia)

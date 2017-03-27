@@ -175,7 +175,7 @@ mod windows {
         }
         let new_mode_flags = match hide {
             true => winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT,
-            false => winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT| ENABLE_ECHO_INPUT,
+            false => winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT | winapi::ENABLE_ECHO_INPUT,
         };
 
         // We want to be able to read line by line, and we still want backspace to work
