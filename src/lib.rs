@@ -71,14 +71,25 @@ mod unix {
 
     /// Reads a password from STDIN.
     pub fn read_password() -> IoResult<String> {
+        read_input(true)
+    }
+
+    /// Reads a password from STDIN.
+    pub fn read_response() -> IoResult<String> {
+        read_input(false)
+    }
+
+    fn read_input(hide: bool) -> IoResult<String> {
         // Make two copies of the terminal settings. The first one will be modified
         // and the second one will act as a backup for when we want to set the
         // terminal back to its original state.
         let mut term = try!(termios::Termios::from_fd(STDIN_FILENO));
         let term_orig = term;
 
-        // Hide the password. This is what makes this function useful.
-        term.c_lflag &= !termios::ECHO;
+        if hide {
+            // Hide the password. This is what makes this function useful.
+            term.c_lflag &= !termios::ECHO;
+        }
 
         // But don't hide the NL character when the user hits ENTER.
         term.c_lflag |= termios::ECHONL;
@@ -142,6 +153,16 @@ mod windows {
 
     /// Reads a password from STDIN.
     pub fn read_password() -> IoResult<String> {
+        read_input(true)
+    }
+
+    /// Reads a password from STDIN.
+    pub fn read_response() -> IoResult<String> {
+        read_input(false)
+    }
+
+    fn read_input(hide: bool) -> IoResult<String> {
+
         // Get the stdin handle
         let handle = unsafe { kernel32::GetStdHandle(winapi::STD_INPUT_HANDLE) };
         if handle == winapi::INVALID_HANDLE_VALUE {
@@ -152,10 +173,13 @@ mod windows {
         if unsafe { kernel32::GetConsoleMode(handle, &mut mode as winapi::LPDWORD) } == 0 {
             return Err(Error::last_os_error())
         }
+        let new_mode_flags = match hide {
+            true => winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT,
+            false => winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT| ENABLE_ECHO_INPUT,
+        };
+
         // We want to be able to read line by line, and we still want backspace to work
-        if unsafe { kernel32::SetConsoleMode(
-            handle, winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT,
-        ) } == 0 {
+        if unsafe { kernel32::SetConsoleMode(handle, new_mode_flags) } == 0 {
             return Err(Error::last_os_error())
         }
         // If your password is over 0x1000 characters you have paranoia problems
@@ -186,9 +210,32 @@ mod windows {
 }
 
 #[cfg(not(windows))]
+pub use unix::read_response;
+#[cfg(windows)]
+pub use windows::read_response;
+
+#[cfg(not(windows))]
 pub use unix::read_password;
 #[cfg(windows)]
 pub use windows::read_password;
+
+/// Prompts for a response on STDOUT and reads it from STDIN.
+pub fn prompt_response_stdout(prompt: &str) -> std::io::Result<String> {
+    let mut stdout = std::io::stdout();
+
+    try!(write!(stdout, "{}", prompt));
+    try!(stdout.flush());
+    read_response()
+}
+
+/// Prompts for a password on STDERR and reads it from STDIN.
+pub fn prompt_response_stderr(prompt: &str) -> std::io::Result<String> {
+    let mut stderr = std::io::stderr();
+
+    try!(write!(stderr, "{}", prompt));
+    try!(stderr.flush());
+    read_response()
+}
 
 /// Prompts for a password on STDOUT and reads it from STDIN.
 pub fn prompt_password_stdout(prompt: &str) -> std::io::Result<String> {
