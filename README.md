@@ -1,7 +1,7 @@
 # Rustastic Password
 
-[![Build Status](https://travis-ci.org/conradkleinespel/rustastic-password.svg?branch=master)](https://travis-ci.org/conradkleinespel/rustastic-password)
-[![Build status](https://ci.appveyor.com/api/projects/status/812odw3tw6oec5sw/branch/master?svg=true)](https://ci.appveyor.com/project/conradkleinespel/rustastic-password/branch/master)
+[![Build Status](https://travis-ci.org/conradkdotcom/rustastic-password.svg?branch=master)](https://travis-ci.org/conradkdotcom/rustastic-password)
+[![Build status](https://ci.appveyor.com/api/projects/status/6pfyblvyhaqo8lmh?svg=true)](https://ci.appveyor.com/project/conradkdotcom/rustastic-password)
 
 This [Rust](http://www.rust-lang.org/) package allows you to safely read
 passwords from standard input in a console application.
@@ -58,6 +58,13 @@ Check [examples/example.rs](examples/example.rs) for a few more examples.
 
 ## Contributors
 
+
+We welcome contribution from everyone. Feel free to open an issue or a pull request at any time.
+
+Check out the [unassigned issues](https://github.com/conradkdotcom/rustastic-password/issues?q=is%3Aissue+is%3Aopen+label%3Aunassigned) to get started. If you have any questions, just let us know and we'll jump in to help.
+
+Here's a list of existing `rpassword` contributors:
+
 * [@C4K3](https://github.com/C4K3)
 * [@conradkleinespel](https://github.com/conradkleinespel)
 * [@dcuddeback](https://github.com/dcuddeback)
@@ -67,3 +74,13 @@ Check [examples/example.rs](examples/example.rs) for a few more examples.
 * [@psych0d0g](https://github.com/psych0d0g)
 * [@retep998](https://github.com/retep998)
 * [@steveatinfincia](https://github.com/steveatinfincia)
+
+Thank you very much for your help!  :smiley:  :heart:
+
+## Donations
+
+`rpassword` is and will remain free for everyone. If you feel like making a donation, I appreciate it though. Here are a few ways you can donate to support `rpassword` development:
+- with Bitcoin: `13SPYbEZP9kvmtsKt6C9cYj4N6Ep7my6gL`
+- with Litecoin: `LN6K6fn9Mq94vbiLNzW1GZ1TvWkVihyn8T`
+
+If you cannot afford to donate, that's OK too. Just enjoy `rpassword`! :-)
