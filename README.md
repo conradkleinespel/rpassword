@@ -1,7 +1,7 @@
 # Rustastic Password
 
-[![Build Status](https://travis-ci.org/conradkdotcom/rustastic-password.svg?branch=master)](https://travis-ci.org/conradkdotcom/rustastic-password)
-[![Build status](https://ci.appveyor.com/api/projects/status/6pfyblvyhaqo8lmh?svg=true)](https://ci.appveyor.com/project/conradkdotcom/rustastic-password)
+[![Build Status](https://travis-ci.org/conradkdotcom/rpassword.svg?branch=master)](https://travis-ci.org/conradkdotcom/rpassword)
+[![Build status](https://ci.appveyor.com/api/projects/status/6pfyblvyhaqo8lmh?svg=true)](https://ci.appveyor.com/project/conradkdotcom/rpassword)
 
 This [Rust](http://www.rust-lang.org/) package allows you to safely read
 passwords from standard input in a console application.
@@ -44,7 +44,7 @@ Check [examples/example.rs](examples/example.rs) for a few more examples.
 
 We welcome contribution from everyone. Feel free to open an issue or a pull request at any time.
 
-Check out the [unassigned issues](https://github.com/conradkdotcom/rustastic-password/issues?q=is%3Aissue+is%3Aopen+label%3Aunassigned) to get started. If you have any questions, just let us know and we'll jump in to help.
+Check out the [unassigned issues](https://github.com/conradkdotcom/rpassword/issues?q=is%3Aissue+is%3Aopen+label%3Aunassigned) to get started. If you have any questions, just let us know and we'll jump in to help.
 
 Here's a list of existing `rpassword` contributors:
 

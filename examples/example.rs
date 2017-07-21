@@ -5,8 +5,7 @@ use std::io::{stdout, Write};
 fn main() {
     let mut stdout = stdout();
 
-    print!("Password: ");
-    stdout.flush().unwrap();
+    // Password without prompt
     let pass = rpassword::read_password().unwrap();
     println!("Your password is {}", pass);
 
@@ -16,12 +15,13 @@ fn main() {
     let pass = rpassword::prompt_password_stderr("Password with prompt on stderr: ").unwrap();
     println!("Your password is {}", pass);
 
-    let response = rpassword::read_response().unwrap();
-    println!("Your response is {}", response);
+    // Password (displayed, not hidden) without prompt
+    let pass = rpassword::read_response().unwrap();
+    println!("Your password is {}", pass);
 
-    let response = rpassword::prompt_response_stdout("Response with prompt on stdout: ").unwrap();
-    println!("Your response is {}", response);
+    let pass = rpassword::prompt_response_stdout("Password (displayed, not hidden) with prompt on stdout: ").unwrap();
+    println!("Your password is {}", pass);
 
-    let response = rpassword::prompt_response_stderr("Response with prompt on stderr: ").unwrap();
-    println!("Your response is {}", response);
+    let pass = rpassword::prompt_response_stderr("Password (displayed, not hidden) with prompt on stderr: ").unwrap();
+    println!("Your password is {}", pass);
 }

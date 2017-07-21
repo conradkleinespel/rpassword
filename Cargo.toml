@@ -1,12 +1,12 @@
 [package]
 
 name = "rpassword"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["Conrad Kleinespel <conradk@conradk.com>"]
 description = "Read passwords in console applications."
 license = "Apache-2.0"
-homepage = "https://github.com/conradkleinespel/rustastic-password"
-repository = "https://github.com/conradkleinespel/rustastic-password"
+homepage = "https://github.com/conradkleinespel/rpassword"
+repository = "https://github.com/conradkleinespel/rpassword"
 documentation = "https://docs.rs/rpassword/"
 readme = "README.md"
 keywords = ["read", "password", "security", "pass", "getpass"]
