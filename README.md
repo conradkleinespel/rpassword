@@ -1,7 +1,7 @@
 # Rustastic Password
 
 [![Build Status](https://travis-ci.org/conradkdotcom/rpassword.svg?branch=master)](https://travis-ci.org/conradkdotcom/rpassword)
-[![Build status](https://ci.appveyor.com/api/projects/status/6pfyblvyhaqo8lmh?svg=true)](https://ci.appveyor.com/project/conradkdotcom/rpassword)
+[![Build status](https://ci.appveyor.com/api/projects/status/h7ak407y28k0ufw2?svg=true)](https://ci.appveyor.com/project/conradkdotcom/rpassword)
 
 This [Rust](http://www.rust-lang.org/) package allows you to safely read
 passwords from standard input in a console application.
