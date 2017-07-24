@@ -20,6 +20,7 @@ mod unix {
     extern crate libc;
 
     use self::libc::STDIN_FILENO;
+    use self::libc::isatty;
     use std::io::{ Error, ErrorKind };
     use std::io::Result as IoResult;
     use std::ptr;
@@ -80,44 +81,52 @@ mod unix {
     }
 
     fn read_input(hide: bool) -> IoResult<String> {
-        // Make two copies of the terminal settings. The first one will be modified
-        // and the second one will act as a backup for when we want to set the
-        // terminal back to its original state.
-        let mut term = try!(termios::Termios::from_fd(STDIN_FILENO));
-        let term_orig = term;
-
-        if hide {
-            // Hide the password. This is what makes this function useful.
-            term.c_lflag &= !termios::ECHO;
-        }
-
-        // But don't hide the NL character when the user hits ENTER.
-        term.c_lflag |= termios::ECHONL;
-
-        // Save the settings for now.
-        try!(termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term));
-
-        // Read the password.
         let mut password = String::new();
-        match get_reader().read_line(&mut password) {
-            Ok(_) => { },
-            Err(err) => {
-                // Reset the terminal and quit.
-                try!(termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term_orig));
 
-                // Return the original IoError.
-                return Err(err);
+        let input_is_piped = unsafe { isatty(0) } == 0;
+        // When output is piped, the termios functions don't work
+        if input_is_piped {
+            get_reader().read_line(&mut password)?;
+        } else {
+            // Make two copies of the terminal settings. The first one will be modified
+            // and the second one will act as a backup for when we want to set the
+            // terminal back to its original state.
+            let mut term = termios::Termios::from_fd(STDIN_FILENO)?;
+            let term_orig = term;
+
+            if hide {
+                // Hide the password. This is what makes this function useful.
+                term.c_lflag &= !termios::ECHO;
             }
-        };
 
-        // Reset the terminal and quit.
-        match termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term_orig) {
-            Ok(_) => {},
-            Err(err) => {
-                unsafe { password.as_mut_vec() }.set_memory(0);
-                return Err(err);
+            // But don't hide the NL character when the user hits ENTER.
+            term.c_lflag |= termios::ECHONL;
+
+            // Save the settings for now.
+            termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term)?;
+
+            // Read the password.
+            match get_reader().read_line(&mut password) {
+                Ok(_) => { },
+                Err(err) => {
+                    // Reset the terminal and quit.
+                    termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term_orig)?;
+
+                    // Return the original IoError.
+                    return Err(err);
+                }
+            };
+
+            // Reset the terminal and quit.
+            match termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term_orig) {
+                Ok(_) => {},
+                Err(err) => {
+                    unsafe { password.as_mut_vec() }.set_memory(0);
+                    return Err(err);
+                }
             }
         }
+
 
         // Remove the \n from the line.
         match password.pop() {
@@ -223,8 +232,8 @@ pub use windows::read_password;
 pub fn prompt_response_stdout(prompt: &str) -> std::io::Result<String> {
     let mut stdout = std::io::stdout();
 
-    try!(write!(stdout, "{}", prompt));
-    try!(stdout.flush());
+    write!(stdout, "{}", prompt)?;
+    stdout.flush()?;
     read_response()
 }
 
@@ -232,8 +241,8 @@ pub fn prompt_response_stdout(prompt: &str) -> std::io::Result<String> {
 pub fn prompt_response_stderr(prompt: &str) -> std::io::Result<String> {
     let mut stderr = std::io::stderr();
 
-    try!(write!(stderr, "{}", prompt));
-    try!(stderr.flush());
+    write!(stderr, "{}", prompt)?;
+    stderr.flush()?;
     read_response()
 }
 
@@ -241,8 +250,8 @@ pub fn prompt_response_stderr(prompt: &str) -> std::io::Result<String> {
 pub fn prompt_password_stdout(prompt: &str) -> std::io::Result<String> {
     let mut stdout = std::io::stdout();
 
-    try!(write!(stdout, "{}", prompt));
-    try!(stdout.flush());
+    write!(stdout, "{}", prompt)?;
+    stdout.flush()?;
     read_password()
 }
 
@@ -250,7 +259,7 @@ pub fn prompt_password_stdout(prompt: &str) -> std::io::Result<String> {
 pub fn prompt_password_stderr(prompt: &str) -> std::io::Result<String> {
     let mut stderr = std::io::stderr();
 
-    try!(write!(stderr, "{}", prompt));
-    try!(stderr.flush());
+    write!(stderr, "{}", prompt)?;
+    stderr.flush()?;
     read_password()
 }
