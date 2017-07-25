@@ -1,4 +1,4 @@
-// Copyright 2014-2016 The Rustastic Password Developers
+// Copyright 2014-2017 The Rpassword Developers
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,143 +12,114 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+extern crate rprompt;
+#[cfg(unix)]
+extern crate libc;
+
 use std::io::Write;
+use std::io::stdin;
+use std::io::Error as IoError;
+use std::io::ErrorKind as IoErrorKind;
 
-#[cfg(not(windows))]
+/// Sets all bytes of a String to 0
+fn zero_memory(s: &mut String) {
+    let mut vec = unsafe { s.as_mut_vec() };
+    for el in vec.iter_mut() {
+        *el = 0u8;
+    }
+}
+
+/// Removes the \n from the read line
+fn fixes_newline(mut password: String) -> std::io::Result<String> {
+    // We should have a newline at the end. This helps prevent things such as:
+    // > printf "no-newline" | rpassword
+    // If we didn't have the \n check, we'd be removing the last "e" by mistake.
+    if password.chars().last() != Some('\n') {
+        return Err(IoError::new(
+            IoErrorKind::UnexpectedEof,
+            "unexpected end of file",
+        ));
+    }
+
+    // Remove the \n from the line.
+    password.pop().ok_or(IoError::new(
+        IoErrorKind::UnexpectedEof,
+        "unexpected end of file",
+    ))?;
+
+    Ok(password)
+}
+
+#[cfg(unix)]
 mod unix {
-    extern crate termios;
-    extern crate libc;
+    use libc::{c_int, isatty, tcgetattr, tcsetattr, TCSANOW, ECHO, ECHONL, STDIN_FILENO};
 
-    use self::libc::STDIN_FILENO;
-    use self::libc::isatty;
-    use std::io::{ Error, ErrorKind };
-    use std::io::Result as IoResult;
-    use std::ptr;
-    #[cfg(not(test))]
-    use std::io::{stdin, Stdin};
-    #[cfg(test)]
-    use std::fs::File;
-    #[cfg(test)]
-    use std::io::{BufRead, BufReader};
-
-    /// A trait for operations on mutable `[u8]`s.
-    trait MutableByteVector {
-        /// Sets all bytes of the receiver to the given value.
-        fn set_memory(&mut self, value: u8);
-    }
-
-    impl MutableByteVector for Vec<u8> {
-        #[inline]
-        fn set_memory(&mut self, value: u8) {
-            unsafe { ptr::write_bytes(self.as_mut_ptr(), value, self.len()) };
+    /// Turns a C function return into an IO Result
+    fn io_result(ret: c_int) -> ::std::io::Result<()> {
+        match ret {
+            0 => Ok(()),
+            _ => Err(::std::io::Error::last_os_error()),
         }
     }
 
-    #[cfg(test)]
-    static mut TEST_EOF: bool = false;
-
-    #[cfg(test)]
-    static mut TEST_HAS_SEEN_EOF_BUFFER: bool = false;
-
-    #[cfg(test)]
-    static mut TEST_HAS_SEEN_REGULAR_BUFFER: bool = false;
-
-
-    #[cfg(test)]
-    fn get_reader<'a>() -> BufReader<File> {
-        if unsafe { TEST_EOF } {
-            unsafe { TEST_HAS_SEEN_EOF_BUFFER = true; }
-            BufReader::new(File::open("/dev/null").unwrap())
-        } else {
-            unsafe { TEST_HAS_SEEN_REGULAR_BUFFER = true; }
-            BufReader::new(File::open("tests/password").unwrap())
-        }
-    }
-
-    #[cfg(not(test))]
-    fn get_reader() -> Stdin {
-        stdin()
-    }
-
-    /// Reads a password from STDIN.
-    pub fn read_password() -> IoResult<String> {
-        read_input(true)
-    }
-
-    /// Reads a password from STDIN.
-    pub fn read_response() -> IoResult<String> {
-        read_input(false)
-    }
-
-    fn read_input(hide: bool) -> IoResult<String> {
+    pub fn read_password() -> ::std::io::Result<String> {
         let mut password = String::new();
 
-        let input_is_piped = unsafe { isatty(0) } == 0;
-        // When output is piped, the termios functions don't work
-        if input_is_piped {
-            get_reader().read_line(&mut password)?;
-        } else {
+        let input_is_tty = unsafe { isatty(0) } == 1;
+
+        // When we ask for a password in a terminal, we'll want to hide the password as it is
+        // typed by the user
+        if input_is_tty {
             // Make two copies of the terminal settings. The first one will be modified
             // and the second one will act as a backup for when we want to set the
             // terminal back to its original state.
-            let mut term = termios::Termios::from_fd(STDIN_FILENO)?;
-            let term_orig = term;
+            let mut term = unsafe { ::std::mem::uninitialized() };
+            let mut term_orig = unsafe { ::std::mem::uninitialized() };
+            io_result(unsafe { tcgetattr(STDIN_FILENO, &mut term) })?;
+            io_result(unsafe { tcgetattr(STDIN_FILENO, &mut term_orig) })?;
 
-            if hide {
-                // Hide the password. This is what makes this function useful.
-                term.c_lflag &= !termios::ECHO;
-            }
+            // Hide the password. This is what makes this function useful.
+            term.c_lflag &= !ECHO;
 
             // But don't hide the NL character when the user hits ENTER.
-            term.c_lflag |= termios::ECHONL;
+            term.c_lflag |= ECHONL;
 
             // Save the settings for now.
-            termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term)?;
+            io_result(unsafe { tcsetattr(STDIN_FILENO, TCSANOW, &term) })?;
 
             // Read the password.
-            match get_reader().read_line(&mut password) {
-                Ok(_) => { },
+            match super::stdin().read_line(&mut password) {
+                Ok(_) => {}
                 Err(err) => {
                     // Reset the terminal and quit.
-                    termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term_orig)?;
+                    io_result(unsafe { tcsetattr(STDIN_FILENO, TCSANOW, &term_orig) })?;
 
-                    // Return the original IoError.
+                    super::zero_memory(&mut password);
                     return Err(err);
                 }
             };
 
-            // Reset the terminal and quit.
-            match termios::tcsetattr(STDIN_FILENO, termios::TCSANOW, &term_orig) {
-                Ok(_) => {},
+            // Reset the terminal.
+            match io_result(unsafe { tcsetattr(STDIN_FILENO, TCSANOW, &term_orig) }) {
+                Ok(_) => {}
                 Err(err) => {
-                    unsafe { password.as_mut_vec() }.set_memory(0);
+                    super::zero_memory(&mut password);
+                    return Err(err);
+                }
+            }
+        } else {
+            // If we don't have a TTY, the input was piped so we bypass
+            // terminal hiding code
+            match super::stdin().read_line(&mut password) {
+                Ok(_) => {}
+                Err(err) => {
+                    super::zero_memory(&mut password);
                     return Err(err);
                 }
             }
         }
 
-
-        // Remove the \n from the line.
-        match password.pop() {
-            Some(_) => {},
-            None => { return Err(Error::new(ErrorKind::UnexpectedEof, "unexpected end of file")) }
-        };
-
-        Ok(password)
-    }
-
-    #[test]
-    fn it_works() {
-        let term_before = termios::Termios::from_fd(STDIN_FILENO).unwrap();
-        assert_eq!(read_password().unwrap(), "my-secret");
-        let term_after = termios::Termios::from_fd(STDIN_FILENO).unwrap();
-        assert_eq!(term_before, term_after);
-        unsafe { TEST_EOF = true; }
-        assert!(!read_password().is_ok());
-        let term_after = termios::Termios::from_fd(STDIN_FILENO).unwrap();
-        assert_eq!(term_before, term_after);
-        assert!(unsafe { TEST_HAS_SEEN_REGULAR_BUFFER });
-        assert!(unsafe { TEST_HAS_SEEN_EOF_BUFFER });
+        super::fixes_newline(password)
     }
 }
 
@@ -156,94 +127,72 @@ mod unix {
 mod windows {
     extern crate winapi;
     extern crate kernel32;
-    use std::io::{ Error, ErrorKind };
-    use std::io::Result as IoResult;
-    use std::ptr::null_mut;
 
-    /// Reads a password from STDIN.
-    pub fn read_password() -> IoResult<String> {
-        read_input(true)
-    }
-
-    /// Reads a password from STDIN.
-    pub fn read_response() -> IoResult<String> {
-        read_input(false)
-    }
-
-    fn read_input(hide: bool) -> IoResult<String> {
+    pub fn read_password() -> ::std::io::Result<String> {
+        let mut password = String::new();
 
         // Get the stdin handle
         let handle = unsafe { kernel32::GetStdHandle(winapi::STD_INPUT_HANDLE) };
         if handle == winapi::INVALID_HANDLE_VALUE {
-            return Err(Error::last_os_error())
+            return Err(::std::io::Error::last_os_error());
         }
-        let mut mode = 0;
+
         // Get the old mode so we can reset back to it when we are done
+        let mut mode = 0;
         if unsafe { kernel32::GetConsoleMode(handle, &mut mode as winapi::LPDWORD) } == 0 {
-            return Err(Error::last_os_error())
+            return Err(::std::io::Error::last_os_error());
         }
-        let new_mode_flags = match hide {
-            true => winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT,
-            false => winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT | winapi::ENABLE_ECHO_INPUT,
-        };
 
         // We want to be able to read line by line, and we still want backspace to work
+        let new_mode_flags = winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT;
         if unsafe { kernel32::SetConsoleMode(handle, new_mode_flags) } == 0 {
-            return Err(Error::last_os_error())
+            return Err(::std::io::Error::last_os_error());
         }
-        // If your password is over 0x1000 characters you have paranoia problems
-        let mut buf: [winapi::WCHAR; 0x1000] = [0; 0x1000];
-        let mut read = 0;
-        // Read a line of stuff from the console
-        if unsafe { kernel32::ReadConsoleW(
-            handle, buf.as_mut_ptr() as winapi::LPVOID, 0x1000,
-            &mut read, null_mut(),
-        ) } == 0 {
-            let err = Error::last_os_error();
-            // Even if we failed to read we should still try to set the mode back
-            unsafe { kernel32::SetConsoleMode(handle, mode) };
-            return Err(err)
-        }
+
+        // Read the password.
+        match super::stdin().read_line(&mut password) {
+            Ok(_) => {}
+            Err(err) => {
+                super::zero_memory(&mut password);
+                return Err(err);
+            }
+        };
+
         // Set the the mode back to normal
         if unsafe { kernel32::SetConsoleMode(handle, mode) } == 0 {
-            return Err(Error::last_os_error())
+            return Err(::std::io::Error::last_os_error());
         }
+
         // Since the newline isn't echo'd we need to do it ourselves
         println!("");
-        // Subtract 2 to get rid of \r\n
-        match String::from_utf16(&buf[..read as usize - 2]) {
-            Ok(s) => Ok(s),
-            Err(_) => Err(Error::new(ErrorKind::InvalidInput, "invalid UTF-16")),
-         }
+
+        super::fixes_newline(password)
     }
 }
 
-#[cfg(not(windows))]
-pub use unix::read_response;
-#[cfg(windows)]
-pub use windows::read_response;
-
-#[cfg(not(windows))]
+#[cfg(unix)]
 pub use unix::read_password;
 #[cfg(windows)]
 pub use windows::read_password;
 
-/// Prompts for a response on STDOUT and reads it from STDIN.
-pub fn prompt_response_stdout(prompt: &str) -> std::io::Result<String> {
-    let mut stdout = std::io::stdout();
+/// Reads a password from STDIN.
+#[deprecated(since = "1.0.0", note = "use `rprompt` crate and `rprompt::read_reply` instead")]
+pub fn read_response() -> std::io::Result<String> {
+    rprompt::read_reply()
+}
 
-    write!(stdout, "{}", prompt)?;
-    stdout.flush()?;
-    read_response()
+/// Prompts for a response on STDOUT and reads it from STDIN.
+#[deprecated(since = "1.0.0",
+             note = "use `rprompt` crate and `rprompt::prompt_reply_stdout` instead")]
+pub fn prompt_response_stdout(prompt: &str) -> std::io::Result<String> {
+    rprompt::prompt_reply_stdout(prompt)
 }
 
 /// Prompts for a password on STDERR and reads it from STDIN.
+#[deprecated(since = "1.0.0",
+             note = "use `rprompt` crate and `rprompt::prompt_reply_stderr` instead")]
 pub fn prompt_response_stderr(prompt: &str) -> std::io::Result<String> {
-    let mut stderr = std::io::stderr();
-
-    write!(stderr, "{}", prompt)?;
-    stderr.flush()?;
-    read_response()
+    rprompt::prompt_reply_stderr(prompt)
 }
 
 /// Prompts for a password on STDOUT and reads it from STDIN.

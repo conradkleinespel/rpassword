@@ -8,8 +8,6 @@ passwords from standard input in a console application.
 
 You can build the documentation with `cargo doc` or [view it online](https://docs.rs/rpassword/).
 
-The source code is released under the Apache 2.0 license.
-
 I'd appreciate feedback if you use this library :-)
 
 ## Usage
@@ -18,7 +16,7 @@ Add `rpassword` as a dependency in Cargo.toml:
 
 ```toml
 [dependencies]
-rpassword = "0.4"
+rpassword = "1.0.0"
 ```
 
 Use `rpassword` within your code:
@@ -27,17 +25,19 @@ Use `rpassword` within your code:
 extern crate rpassword;
 
 fn main() {
-    // Prompt for a password
+    // Prompt for a password on STDOUT
     let pass = rpassword::prompt_password_stdout("Password: ").unwrap();
     println!("Your password is {}", pass);
-    
+
+    // Prompt for a password on STDERR
+    let pass = rpassword::prompt_password_stderr("Password: ").unwrap();
+    println!("Your password is {}", pass);
+
     // Read a password without prompt
     let pass = rpassword::read_password().unwrap();
     println!("Your password is {}", pass);
 }
 ```
-
-Check [examples/example.rs](examples/example.rs) for a few more examples.
 
 ## Contributors
 
