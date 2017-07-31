@@ -62,6 +62,7 @@ mod unix {
         }
     }
 
+    /// Reads a password from STDIN
     pub fn read_password() -> ::std::io::Result<String> {
         let mut password = String::new();
 
@@ -128,6 +129,7 @@ mod windows {
     extern crate winapi;
     extern crate kernel32;
 
+    /// Reads a password from STDIN
     pub fn read_password() -> ::std::io::Result<String> {
         let mut password = String::new();
 
@@ -175,27 +177,24 @@ pub use unix::read_password;
 #[cfg(windows)]
 pub use windows::read_password;
 
-/// Reads a password from STDIN.
 #[deprecated(since = "1.0.0", note = "use `rprompt` crate and `rprompt::read_reply` instead")]
 pub fn read_response() -> std::io::Result<String> {
     rprompt::read_reply()
 }
 
-/// Prompts for a response on STDOUT and reads it from STDIN.
 #[deprecated(since = "1.0.0",
              note = "use `rprompt` crate and `rprompt::prompt_reply_stdout` instead")]
 pub fn prompt_response_stdout(prompt: &str) -> std::io::Result<String> {
     rprompt::prompt_reply_stdout(prompt)
 }
 
-/// Prompts for a password on STDERR and reads it from STDIN.
 #[deprecated(since = "1.0.0",
              note = "use `rprompt` crate and `rprompt::prompt_reply_stderr` instead")]
 pub fn prompt_response_stderr(prompt: &str) -> std::io::Result<String> {
     rprompt::prompt_reply_stderr(prompt)
 }
 
-/// Prompts for a password on STDOUT and reads it from STDIN.
+/// Prompts for a password on STDOUT and reads it from STDIN
 pub fn prompt_password_stdout(prompt: &str) -> std::io::Result<String> {
     let mut stdout = std::io::stdout();
 
@@ -204,7 +203,7 @@ pub fn prompt_password_stdout(prompt: &str) -> std::io::Result<String> {
     read_password()
 }
 
-/// Prompts for a password on STDERR and reads it from STDIN.
+/// Prompts for a password on STDERR and reads it from STDIN
 pub fn prompt_password_stderr(prompt: &str) -> std::io::Result<String> {
     let mut stderr = std::io::stderr();
 

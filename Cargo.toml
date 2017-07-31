@@ -1,7 +1,7 @@
 [package]
 
 name = "rpassword"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Conrad Kleinespel <conradk@conradk.com>"]
 description = "Read passwords in console applications."
 license = "Apache-2.0"
