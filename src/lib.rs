@@ -42,10 +42,12 @@ fn fixes_newline(mut password: String) -> std::io::Result<String> {
     }
 
     // Remove the \n from the line.
-    password.pop().ok_or(IoError::new(
-        IoErrorKind::UnexpectedEof,
-        "unexpected end of file",
-    ))?;
+    password.pop();
+
+    // Remove the \r from the line if present
+    if password.chars().last() == Some('\r') {
+        password.pop();
+    }
 
     Ok(password)
 }
