@@ -145,7 +145,7 @@ mod windows {
 
     /// Reads a password from anything that implements BufRead
     pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<String>
-        where T: ::std::io::BufReader {
+        where T: ::std::io::BufRead {
         let mut password = String::new();
 
         // Get the stdin handle
