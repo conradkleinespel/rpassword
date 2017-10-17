@@ -52,6 +52,11 @@ fn fixes_newline(mut password: String) -> std::io::Result<String> {
     Ok(password)
 }
 
+/// Reads a password from STDIN
+pub fn read_password() -> ::std::io::Result<String> {
+    read_password_with_reader(None::<::std::io::Empty>)
+}
+
 #[cfg(unix)]
 mod unix {
     use libc::{c_int, isatty, tcgetattr, tcsetattr, TCSANOW, ECHO, ECHONL, STDIN_FILENO};
@@ -64,8 +69,9 @@ mod unix {
         }
     }
 
-    /// Reads a password from STDIN
-    pub fn read_password() -> ::std::io::Result<String> {
+    /// Reads a password from anything that implements BufRead
+    pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<String>
+        where T: ::std::io::BufRead {
         let mut password = String::new();
 
         let input_is_tty = unsafe { isatty(0) } == 1;
@@ -91,7 +97,13 @@ mod unix {
             io_result(unsafe { tcsetattr(STDIN_FILENO, TCSANOW, &term) })?;
 
             // Read the password.
-            match super::stdin().read_line(&mut password) {
+            let input = match source {
+                Some(mut reader) => reader.read_line(&mut password),
+                _ => ::std::io::stdin().read_line(&mut password),
+            };
+
+            // Check the response.
+            match input {
                 Ok(_) => {}
                 Err(err) => {
                     // Reset the terminal and quit.
@@ -131,8 +143,9 @@ mod windows {
     extern crate winapi;
     extern crate kernel32;
 
-    /// Reads a password from STDIN
-    pub fn read_password() -> ::std::io::Result<String> {
+    /// Reads a password from anything that implements BufRead
+    pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<String>
+        where T: ::std::io::BufRead {
         let mut password = String::new();
 
         // Get the stdin handle
@@ -154,7 +167,13 @@ mod windows {
         }
 
         // Read the password.
-        match super::stdin().read_line(&mut password) {
+        let input = match source {
+            Some(mut reader) => reader.read_line(&mut password),
+            _ => ::std::io::stdin().read_line(&mut password),
+        };
+
+        // Check the response.
+        match input {
             Ok(_) => {}
             Err(err) => {
                 super::zero_memory(&mut password);
@@ -175,9 +194,9 @@ mod windows {
 }
 
 #[cfg(unix)]
-pub use unix::read_password;
+pub use unix::read_password_with_reader;
 #[cfg(windows)]
-pub use windows::read_password;
+pub use windows::read_password_with_reader;
 
 #[deprecated(since = "1.0.0", note = "use `rprompt` crate and `rprompt::read_reply` instead")]
 pub fn read_response() -> std::io::Result<String> {
@@ -212,4 +231,19 @@ pub fn prompt_password_stderr(prompt: &str) -> std::io::Result<String> {
     write!(stderr, "{}", prompt)?;
     stderr.flush()?;
     read_password()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    fn mock_input() -> Cursor<&'static [u8]> {
+        Cursor::new(&b"A mocked response.\r\n"[..])
+    }
+
+    #[test]
+    fn can_read_from_redirected_input() {
+        let response = ::read_password_with_reader(Some(mock_input())).unwrap();
+        assert_eq!(response, "A mocked response.");
+    }
 }
