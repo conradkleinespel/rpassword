@@ -28,18 +28,4 @@ fn main() {
         Ok(pass) => println!("{}", pass),
         Err(_) => println!("error")
     }
-
-    // Regular input reading functions, deprecated but present for BC
-    match rpassword::read_response() {
-        Ok(pass) => println!("{}", pass),
-        Err(_) => println!("error")
-    }
-    match rpassword::prompt_response_stdout("prompt_reply_stdout") {
-        Ok(pass) => println!("{}", pass),
-        Err(_) => println!("error")
-    }
-    match rpassword::prompt_response_stderr("prompt_reply_stderr") {
-        Ok(pass) => println!("{}", pass),
-        Err(_) => println!("error")
-    }
 }

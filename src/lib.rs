@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate rprompt;
 #[cfg(unix)]
 extern crate libc;
 
@@ -197,23 +196,6 @@ mod windows {
 pub use unix::read_password_with_reader;
 #[cfg(windows)]
 pub use windows::read_password_with_reader;
-
-#[deprecated(since = "1.0.0", note = "use `rprompt` crate and `rprompt::read_reply` instead")]
-pub fn read_response() -> std::io::Result<String> {
-    rprompt::read_reply()
-}
-
-#[deprecated(since = "1.0.0",
-             note = "use `rprompt` crate and `rprompt::prompt_reply_stdout` instead")]
-pub fn prompt_response_stdout(prompt: &str) -> std::io::Result<String> {
-    rprompt::prompt_reply_stdout(prompt)
-}
-
-#[deprecated(since = "1.0.0",
-             note = "use `rprompt` crate and `rprompt::prompt_reply_stderr` instead")]
-pub fn prompt_response_stderr(prompt: &str) -> std::io::Result<String> {
-    rprompt::prompt_reply_stderr(prompt)
-}
 
 /// Prompts for a password on STDOUT and reads it from STDIN
 pub fn prompt_password_stdout(prompt: &str) -> std::io::Result<String> {
