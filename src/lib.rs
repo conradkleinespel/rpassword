@@ -237,13 +237,19 @@ pub fn prompt_password_stderr(prompt: &str) -> std::io::Result<String> {
 mod tests {
     use std::io::Cursor;
 
-    fn mock_input() -> Cursor<&'static [u8]> {
+    fn mock_input_crlf() -> Cursor<&'static [u8]> {
         Cursor::new(&b"A mocked response.\r\n"[..])
+    }
+
+    fn mock_input_lf() -> Cursor<&'static [u8]> {
+        Cursor::new(&b"A mocked response.\n"[..])
     }
 
     #[test]
     fn can_read_from_redirected_input() {
-        let response = ::read_password_with_reader(Some(mock_input())).unwrap();
+        let response = ::read_password_with_reader(Some(mock_input_crlf())).unwrap();
+        assert_eq!(response, "A mocked response.");
+        let response = ::read_password_with_reader(Some(mock_input_lf())).unwrap();
         assert_eq!(response, "A mocked response.");
     }
 }
