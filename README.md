@@ -50,6 +50,7 @@ Here's a list of existing `rpassword` contributors:
 
 * [@C4K3](https://github.com/C4K3)
 * [@conradkleinespel](https://github.com/conradkleinespel)
+* [@DaveLancaster](https://github.com/DaveLancaster)
 * [@dcuddeback](https://github.com/dcuddeback)
 * [@equalsraf](https://github.com/equalsraf)
 * [@JanLikar](https://github.com/JanLikar)
