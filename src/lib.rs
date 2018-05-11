@@ -22,7 +22,7 @@ use std::io::ErrorKind as IoErrorKind;
 
 /// Sets all bytes of a String to 0
 fn zero_memory(s: &mut String) {
-    let mut vec = unsafe { s.as_mut_vec() };
+    let vec = unsafe { s.as_mut_vec() };
     for el in vec.iter_mut() {
         *el = 0u8;
     }
@@ -33,7 +33,7 @@ fn fixes_newline(mut password: String) -> std::io::Result<String> {
     // We should have a newline at the end. This helps prevent things such as:
     // > printf "no-newline" | rpassword
     // If we didn't have the \n check, we'd be removing the last "e" by mistake.
-    if password.chars().last() != Some('\n') {
+    if !password.ends_with('\n') {
         return Err(IoError::new(
             IoErrorKind::UnexpectedEof,
             "unexpected end of file",
@@ -44,7 +44,7 @@ fn fixes_newline(mut password: String) -> std::io::Result<String> {
     password.pop();
 
     // Remove the \r from the line if present
-    if password.chars().last() == Some('\r') {
+    if password.ends_with('\r') {
         password.pop();
     }
 
