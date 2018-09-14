@@ -68,9 +68,8 @@ mod unix {
         }
     }
 
-    /// Reads a password from anything that implements BufRead
-    pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<String>
-        where T: ::std::io::BufRead {
+    /// Reads a password from stdin
+    pub fn read_password_from_stdin() -> ::std::io::Result<String> {
         let mut password = String::new();
 
         let input_is_tty = unsafe { isatty(STDIN_FILENO) } == 1;
@@ -96,10 +95,7 @@ mod unix {
             io_result(unsafe { tcsetattr(STDIN_FILENO, TCSANOW, &term) })?;
 
             // Read the password.
-            let input = match source {
-                Some(mut reader) => reader.read_line(&mut password),
-                _ => ::std::io::stdin().read_line(&mut password),
-            };
+            let input = ::std::io::stdin().read_line(&mut password);
 
             // Check the response.
             match input {
@@ -142,9 +138,8 @@ mod windows {
     extern crate winapi;
     extern crate kernel32;
 
-    /// Reads a password from anything that implements BufRead
-    pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<String>
-        where T: ::std::io::BufRead {
+    /// Reads a password from stdin
+    pub fn read_password_from_stdin() -> ::std::io::Result<String> {
         let mut password = String::new();
 
         // Get the stdin handle
@@ -166,10 +161,7 @@ mod windows {
         }
 
         // Read the password.
-        let input = match source {
-            Some(mut reader) => reader.read_line(&mut password),
-            _ => ::std::io::stdin().read_line(&mut password),
-        };
+        let input = ::std::io::stdin().read_line(&mut password);
 
         // Check the response.
         match input {
@@ -193,9 +185,26 @@ mod windows {
 }
 
 #[cfg(unix)]
-pub use unix::read_password_with_reader;
+pub use unix::read_password_from_stdin;
 #[cfg(windows)]
-pub use windows::read_password_with_reader;
+pub use windows::read_password_from_stdin;
+
+/// Reads a password from anything that implements BufRead
+pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<String>
+    where T: ::std::io::BufRead {
+    match source {
+        Some(mut reader) => {
+            let mut password = String::new();
+            if let Err(err) = reader.read_line(&mut password) {
+                zero_memory(&mut password);
+                Err(err)
+            } else {
+                fixes_newline(password)
+            }
+        },
+        None => read_password_from_stdin(),
+    }
+}
 
 /// Prompts for a password on STDOUT and reads it from STDIN
 pub fn prompt_password_stdout(prompt: &str) -> std::io::Result<String> {
