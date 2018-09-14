@@ -73,7 +73,7 @@ mod unix {
         where T: ::std::io::BufRead {
         let mut password = String::new();
 
-        let input_is_tty = unsafe { isatty(0) } == 1;
+        let input_is_tty = unsafe { isatty(STDIN_FILENO) } == 1;
 
         // When we ask for a password in a terminal, we'll want to hide the password as it is
         // typed by the user
