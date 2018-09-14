@@ -228,9 +228,6 @@ mod windows {
             return Err(::std::io::Error::last_os_error());
         }
 
-        // Since the newline isn't echo'd we need to do it ourselves
-        println!("");
-
         super::fixes_newline(password)
     }
 
