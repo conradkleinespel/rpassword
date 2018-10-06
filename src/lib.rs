@@ -16,7 +16,6 @@
 extern crate libc;
 
 use std::io::Write;
-use std::io::stdin;
 use std::io::Error as IoError;
 use std::io::ErrorKind as IoErrorKind;
 
@@ -59,6 +58,8 @@ pub fn read_password() -> ::std::io::Result<String> {
 #[cfg(unix)]
 mod unix {
     use libc::{c_int, isatty, tcgetattr, tcsetattr, TCSANOW, ECHO, ECHONL, STDIN_FILENO};
+    use std::io::{self, BufRead, Write};
+    use std::os::unix::io::AsRawFd;
 
     /// Turns a C function return into an IO Result
     fn io_result(ret: c_int) -> ::std::io::Result<()> {
@@ -69,10 +70,22 @@ mod unix {
     }
 
     /// Reads a password from stdin
-    pub fn read_password_from_stdin() -> ::std::io::Result<String> {
+    pub fn read_password_from_stdin(open_tty: bool) -> ::std::io::Result<String> {
         let mut password = String::new();
 
-        let input_is_tty = unsafe { isatty(STDIN_FILENO) } == 1;
+        enum Source {
+            Tty(io::BufReader<::std::fs::File>),
+            Stdin(io::Stdin),
+        }
+
+        let (tty_fd, mut source) = if open_tty {
+            let tty = ::std::fs::File::open("/dev/tty")?;
+            (tty.as_raw_fd(), Source::Tty(io::BufReader::new(tty)))
+        } else {
+            (STDIN_FILENO, Source::Stdin(io::stdin()))
+        };
+
+        let input_is_tty = unsafe { isatty(tty_fd) } == 1;
 
         // When we ask for a password in a terminal, we'll want to hide the password as it is
         // typed by the user
@@ -82,8 +95,8 @@ mod unix {
             // terminal back to its original state.
             let mut term = unsafe { ::std::mem::uninitialized() };
             let mut term_orig = unsafe { ::std::mem::uninitialized() };
-            io_result(unsafe { tcgetattr(STDIN_FILENO, &mut term) })?;
-            io_result(unsafe { tcgetattr(STDIN_FILENO, &mut term_orig) })?;
+            io_result(unsafe { tcgetattr(tty_fd, &mut term) })?;
+            io_result(unsafe { tcgetattr(tty_fd, &mut term_orig) })?;
 
             // Hide the password. This is what makes this function useful.
             term.c_lflag &= !ECHO;
@@ -92,17 +105,20 @@ mod unix {
             term.c_lflag |= ECHONL;
 
             // Save the settings for now.
-            io_result(unsafe { tcsetattr(STDIN_FILENO, TCSANOW, &term) })?;
+            io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term) })?;
 
             // Read the password.
-            let input = ::std::io::stdin().read_line(&mut password);
+            let input = match source {
+                Source::Tty(ref mut tty) => tty.read_line(&mut password),
+                Source::Stdin(ref mut stdin) => stdin.read_line(&mut password),
+            };
 
             // Check the response.
             match input {
                 Ok(_) => {}
                 Err(err) => {
                     // Reset the terminal and quit.
-                    io_result(unsafe { tcsetattr(STDIN_FILENO, TCSANOW, &term_orig) })?;
+                    io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term_orig) })?;
 
                     super::zero_memory(&mut password);
                     return Err(err);
@@ -110,7 +126,7 @@ mod unix {
             };
 
             // Reset the terminal.
-            match io_result(unsafe { tcsetattr(STDIN_FILENO, TCSANOW, &term_orig) }) {
+            match io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term_orig) }) {
                 Ok(_) => {}
                 Err(err) => {
                     super::zero_memory(&mut password);
@@ -120,7 +136,12 @@ mod unix {
         } else {
             // If we don't have a TTY, the input was piped so we bypass
             // terminal hiding code
-            match super::stdin().read_line(&mut password) {
+            let input = match source {
+                Source::Tty(mut tty) => tty.read_line(&mut password),
+                Source::Stdin(mut stdin) => stdin.read_line(&mut password),
+            };
+
+            match input {
                 Ok(_) => {}
                 Err(err) => {
                     super::zero_memory(&mut password);
@@ -131,19 +152,45 @@ mod unix {
 
         super::fixes_newline(password)
     }
+
+    /// Displays a prompt on the terminal
+    pub fn display_on_tty(prompt: &str) -> ::std::io::Result<()> {
+        let mut stream =
+            ::std::fs::OpenOptions::new().write(true).open("/dev/tty")?;
+        write!(stream, "{}", prompt)?;
+        stream.flush()
+    }
 }
 
 #[cfg(windows)]
 mod windows {
     extern crate winapi;
     extern crate kernel32;
+    use std::io::{self, BufRead, Write};
+    use std::os::windows::io::{FromRawHandle, IntoRawHandle};
+    use self::winapi::winnt::{
+        GENERIC_READ, GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    };
+    use self::winapi::fileapi::OPEN_EXISTING;
 
     /// Reads a password from stdin
-    pub fn read_password_from_stdin() -> ::std::io::Result<String> {
+    pub fn read_password_from_stdin(open_tty: bool) -> ::std::io::Result<String> {
         let mut password = String::new();
 
         // Get the stdin handle
-        let handle = unsafe { kernel32::GetStdHandle(winapi::STD_INPUT_HANDLE) };
+        let handle = if open_tty {
+            unsafe {
+                kernel32::CreateFileA(b"CONIN$\x00".as_ptr() as *const i8,
+                                      GENERIC_READ | GENERIC_WRITE,
+                                      FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                      ::std::ptr::null_mut(), OPEN_EXISTING, 0,
+                                      ::std::ptr::null_mut())
+            }
+        } else {
+            unsafe {
+                kernel32::GetStdHandle(winapi::STD_INPUT_HANDLE)
+            }
+        };
         if handle == winapi::INVALID_HANDLE_VALUE {
             return Err(::std::io::Error::last_os_error());
         }
@@ -161,7 +208,11 @@ mod windows {
         }
 
         // Read the password.
-        let input = ::std::io::stdin().read_line(&mut password);
+        let mut source = io::BufReader::new(unsafe {
+            ::std::fs::File::from_raw_handle(handle)
+        });
+        let input = source.read_line(&mut password);
+        let handle = source.into_inner().into_raw_handle();
 
         // Check the response.
         match input {
@@ -177,17 +228,35 @@ mod windows {
             return Err(::std::io::Error::last_os_error());
         }
 
-        // Since the newline isn't echo'd we need to do it ourselves
-        println!("");
-
         super::fixes_newline(password)
+    }
+
+    /// Displays a prompt on the terminal
+    pub fn display_on_tty(prompt: &str) -> ::std::io::Result<()> {
+        let handle = unsafe {
+            kernel32::CreateFileA(b"CONOUT$\x00".as_ptr() as *const i8,
+                                  GENERIC_READ | GENERIC_WRITE,
+                                  FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                  ::std::ptr::null_mut(), OPEN_EXISTING, 0,
+                                  ::std::ptr::null_mut())
+        };
+        if handle == winapi::INVALID_HANDLE_VALUE {
+            return Err(::std::io::Error::last_os_error());
+        }
+
+        let mut stream = unsafe {
+            ::std::fs::File::from_raw_handle(handle)
+        };
+
+        write!(stream, "{}", prompt)?;
+        stream.flush()
     }
 }
 
 #[cfg(unix)]
-pub use unix::read_password_from_stdin;
+use unix::{read_password_from_stdin, display_on_tty};
 #[cfg(windows)]
-pub use windows::read_password_from_stdin;
+use windows::{read_password_from_stdin, display_on_tty};
 
 /// Reads a password from anything that implements BufRead
 pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<String>
@@ -202,8 +271,17 @@ pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<Stri
                 fixes_newline(password)
             }
         },
-        None => read_password_from_stdin(),
+        None => read_password_from_stdin(false),
     }
+}
+
+/// Reads a password from the terminal
+pub fn read_password_from_tty(prompt: Option<&str>)
+                              -> ::std::io::Result<String> {
+    if let Some(prompt) = prompt {
+        display_on_tty(prompt)?;
+    }
+    read_password_from_stdin(true)
 }
 
 /// Prompts for a password on STDOUT and reads it from STDIN
