@@ -25,6 +25,10 @@ Use `rpassword` within your code:
 extern crate rpassword;
 
 fn main() {
+    // Prompt for a password on TTY (safest but not default for backwards compatibility)
+    let pass = rpassword::read_password_from_tty(Some("Password: ")).unwrap();
+    println!("Your password is {}", pass);
+    
     // Prompt for a password on STDOUT
     let pass = rpassword::prompt_password_stdout("Password: ").unwrap();
     println!("Your password is {}", pass);
@@ -58,5 +62,6 @@ Here's a list of existing `rpassword` contributors:
 * [@psych0d0g](https://github.com/psych0d0g)
 * [@retep998](https://github.com/retep998)
 * [@steveatinfincia](https://github.com/steveatinfincia)
+* [@teythoon](https://github.com/teythoon)
 
 Thank you very much for your help!  :smiley:  :heart:
