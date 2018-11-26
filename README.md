@@ -16,7 +16,7 @@ Add `rpassword` as a dependency in Cargo.toml:
 
 ```toml
 [dependencies]
-rpassword = "2.0.0"
+rpassword = "2.1.0"
 ```
 
 Use `rpassword` within your code:
