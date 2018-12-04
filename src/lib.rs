@@ -16,8 +16,6 @@
 extern crate libc;
 
 use std::io::Write;
-use std::io::Error as IoError;
-use std::io::ErrorKind as IoErrorKind;
 
 /// Sets all bytes of a String to 0
 fn zero_memory(s: &mut String) {
@@ -28,26 +26,19 @@ fn zero_memory(s: &mut String) {
 }
 
 /// Removes the \n from the read line
-fn fixes_newline(mut password: String) -> std::io::Result<String> {
-    // We should have a newline at the end. This helps prevent things such as:
-    // > printf "no-newline" | rpassword
-    // If we didn't have the \n check, we'd be removing the last "e" by mistake.
-    if !password.ends_with('\n') {
-        return Err(IoError::new(
-            IoErrorKind::UnexpectedEof,
-            "unexpected end of file",
-        ));
-    }
+fn fixes_newline(password: &mut String) {
+    // We may not have a newline, e.g. if user sent CTRL-D or if
+    // this is not a TTY.
 
-    // Remove the \n from the line.
-    password.pop();
-
-    // Remove the \r from the line if present
-    if password.ends_with('\r') {
+    if password.ends_with('\n') {
+        // Remove the \n from the line if present
         password.pop();
-    }
 
-    Ok(password)
+        // Remove the \r from the line if present
+        if password.ends_with('\r') {
+            password.pop();
+        }
+    }
 }
 
 /// Reads a password from STDIN
@@ -150,7 +141,9 @@ mod unix {
             }
         }
 
-        super::fixes_newline(password)
+        super::fixes_newline(&mut password);
+
+        Ok(password)
     }
 
     /// Displays a prompt on the terminal
@@ -228,7 +221,9 @@ mod windows {
             return Err(::std::io::Error::last_os_error());
         }
 
-        super::fixes_newline(password)
+        super::fixes_newline(&mut password);
+
+        Ok(password)
     }
 
     /// Displays a prompt on the terminal
@@ -268,7 +263,8 @@ pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<Stri
                 zero_memory(&mut password);
                 Err(err)
             } else {
-                fixes_newline(password)
+                fixes_newline(&mut password);
+                Ok(password)
             }
         },
         None => read_password_from_stdin(false),
