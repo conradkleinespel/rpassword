@@ -11,6 +11,9 @@ documentation = "https://docs.rs/rpassword/"
 readme = "README.md"
 keywords = ["read", "password", "security", "pass", "getpass"]
 
+[dependencies]
+zeroize = "0.5"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

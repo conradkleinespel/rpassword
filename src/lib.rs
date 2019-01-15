@@ -14,16 +14,10 @@
 
 #[cfg(unix)]
 extern crate libc;
+extern crate zeroize;
 
 use std::io::Write;
-
-/// Sets all bytes of a String to 0
-fn zero_memory(s: &mut String) {
-    let vec = unsafe { s.as_mut_vec() };
-    for el in vec.iter_mut() {
-        *el = 0u8;
-    }
-}
+use zeroize::Zeroize;
 
 /// Removes the \n from the read line
 fn fixes_newline(password: &mut String) {
@@ -51,6 +45,7 @@ mod unix {
     use libc::{c_int, isatty, tcgetattr, tcsetattr, TCSANOW, ECHO, ECHONL, STDIN_FILENO};
     use std::io::{self, BufRead, Write};
     use std::os::unix::io::AsRawFd;
+    use zeroize::Zeroize;
 
     /// Turns a C function return into an IO Result
     fn io_result(ret: c_int) -> ::std::io::Result<()> {
@@ -111,7 +106,7 @@ mod unix {
                     // Reset the terminal and quit.
                     io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term_orig) })?;
 
-                    super::zero_memory(&mut password);
+                    password.zeroize();
                     return Err(err);
                 }
             };
@@ -120,7 +115,7 @@ mod unix {
             match io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term_orig) }) {
                 Ok(_) => {}
                 Err(err) => {
-                    super::zero_memory(&mut password);
+                    password.zeroize();
                     return Err(err);
                 }
             }
@@ -135,7 +130,7 @@ mod unix {
             match input {
                 Ok(_) => {}
                 Err(err) => {
-                    super::zero_memory(&mut password);
+                    password.zeroize();
                     return Err(err);
                 }
             }
@@ -165,6 +160,7 @@ mod windows {
         GENERIC_READ, GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     };
     use self::winapi::fileapi::OPEN_EXISTING;
+    use zeroize::Zeroize;
 
     /// Reads a password from stdin
     pub fn read_password_from_stdin(open_tty: bool) -> ::std::io::Result<String> {
@@ -211,7 +207,7 @@ mod windows {
         match input {
             Ok(_) => {}
             Err(err) => {
-                super::zero_memory(&mut password);
+                password.zeroize();
                 return Err(err);
             }
         };
@@ -260,7 +256,7 @@ pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<Stri
         Some(mut reader) => {
             let mut password = String::new();
             if let Err(err) = reader.read_line(&mut password) {
-                zero_memory(&mut password);
+                password.zeroize();
                 Err(err)
             } else {
                 fixes_newline(&mut password);
