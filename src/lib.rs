@@ -223,6 +223,9 @@ mod windows {
 
         super::fixes_newline(&mut password);
 
+		// Newline for windows which otherwise prints on the same line.
+		println!("");
+
         Ok(password)
     }
 
