@@ -58,6 +58,7 @@ Here's a list of existing `rpassword` contributors:
 * [@dcuddeback](https://github.com/dcuddeback)
 * [@equalsraf](https://github.com/equalsraf)
 * [@JanLikar](https://github.com/JanLikar)
+* [@joshuef](https://github.com/joshuef)
 * [@longshorej](https://github.com/longshorej)
 * [@petevine](https://github.com/petevine)
 * [@psych0d0g](https://github.com/psych0d0g)
