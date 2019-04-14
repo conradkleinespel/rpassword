@@ -16,13 +16,18 @@
 extern crate libc;
 
 use std::io::Write;
+use std::{ptr, sync::atomic};
 
 /// Sets all bytes of a String to 0
 fn zero_memory(s: &mut String) {
-    let vec = unsafe { s.as_mut_vec() };
-    for el in vec.iter_mut() {
-        *el = 0u8;
+    let default = u8::default();
+
+    for c in unsafe { s.as_bytes_mut() } {
+        unsafe { ptr::write_volatile(c, default) };
     }
+
+    atomic::fence(atomic::Ordering::SeqCst);
+    atomic::compiler_fence(atomic::Ordering::SeqCst);
 }
 
 /// Removes the \n from the read line
