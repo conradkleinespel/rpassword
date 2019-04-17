@@ -164,8 +164,8 @@ mod unix {
 mod windows {
     extern crate winapi;
     extern crate kernel32;
-    use std::io::{self, BufRead, Write};
-    use std::os::windows::io::{FromRawHandle, IntoRawHandle};
+    use std::io::{self, Write};
+    use std::os::windows::io::{FromRawHandle, AsRawHandle};
     use self::winapi::winnt::{
         GENERIC_READ, GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     };
@@ -206,11 +206,9 @@ mod windows {
         }
 
         // Read the password.
-        let mut source = io::BufReader::new(unsafe {
-            ::std::fs::File::from_raw_handle(handle)
-        });
+        let source = io::stdin();
         let input = source.read_line(&mut password);
-        let handle = source.into_inner().into_raw_handle();
+        let handle = source.as_raw_handle();
 
         // Check the response.
         match input {
