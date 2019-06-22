@@ -15,6 +15,9 @@
 #[cfg(unix)]
 extern crate libc;
 
+#[cfg(windows)]
+extern crate winapi;
+
 use std::io::Write;
 use std::{ptr, sync::atomic};
 
@@ -162,46 +165,51 @@ mod unix {
 
 #[cfg(windows)]
 mod windows {
-    extern crate winapi;
-    extern crate kernel32;
+    use std::ptr;
     use std::io::{self, Write};
     use std::os::windows::io::{FromRawHandle, AsRawHandle};
-    use self::winapi::winnt::{
+    use winapi::um::winnt::{
         GENERIC_READ, GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     };
-    use self::winapi::fileapi::OPEN_EXISTING;
+    use winapi::um::fileapi::{CreateFileA, OPEN_EXISTING};
+    use winapi::um::processenv::GetStdHandle;
+    use winapi::um::winbase::STD_INPUT_HANDLE;
+    use winapi::um::handleapi::INVALID_HANDLE_VALUE;
+    use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
+    use winapi::shared::minwindef::LPDWORD;
+    use winapi::um::wincon::{ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT};
 
     /// Reads a password from stdin
-    pub fn read_password_from_stdin(open_tty: bool) -> ::std::io::Result<String> {
+    pub fn read_password_from_stdin(open_tty: bool) -> io::Result<String> {
         let mut password = String::new();
 
         // Get the stdin handle
         let handle = if open_tty {
             unsafe {
-                kernel32::CreateFileA(b"CONIN$\x00".as_ptr() as *const i8,
+                CreateFileA(b"CONIN$\x00".as_ptr() as *const i8,
                                       GENERIC_READ | GENERIC_WRITE,
                                       FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                      ::std::ptr::null_mut(), OPEN_EXISTING, 0,
-                                      ::std::ptr::null_mut())
+                                      ptr::null_mut(), OPEN_EXISTING, 0,
+                                      ptr::null_mut())
             }
         } else {
             unsafe {
-                kernel32::GetStdHandle(winapi::STD_INPUT_HANDLE)
+                GetStdHandle(STD_INPUT_HANDLE)
             }
         };
-        if handle == winapi::INVALID_HANDLE_VALUE {
+        if handle == INVALID_HANDLE_VALUE {
             return Err(::std::io::Error::last_os_error());
         }
 
         // Get the old mode so we can reset back to it when we are done
         let mut mode = 0;
-        if unsafe { kernel32::GetConsoleMode(handle, &mut mode as winapi::LPDWORD) } == 0 {
+        if unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) } == 0 {
             return Err(::std::io::Error::last_os_error());
         }
 
         // We want to be able to read line by line, and we still want backspace to work
-        let new_mode_flags = winapi::ENABLE_LINE_INPUT | winapi::ENABLE_PROCESSED_INPUT;
-        if unsafe { kernel32::SetConsoleMode(handle, new_mode_flags) } == 0 {
+        let new_mode_flags = ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT;
+        if unsafe { SetConsoleMode(handle, new_mode_flags) } == 0 {
             return Err(::std::io::Error::last_os_error());
         }
 
@@ -220,14 +228,14 @@ mod windows {
         };
 
         // Set the the mode back to normal
-        if unsafe { kernel32::SetConsoleMode(handle, mode) } == 0 {
+        if unsafe { SetConsoleMode(handle, mode) } == 0 {
             return Err(::std::io::Error::last_os_error());
         }
 
         super::fixes_newline(&mut password);
 
 		// Newline for windows which otherwise prints on the same line.
-		println!("");
+		println!();
 
         Ok(password)
     }
@@ -235,13 +243,13 @@ mod windows {
     /// Displays a prompt on the terminal
     pub fn display_on_tty(prompt: &str) -> ::std::io::Result<()> {
         let handle = unsafe {
-            kernel32::CreateFileA(b"CONOUT$\x00".as_ptr() as *const i8,
+            CreateFileA(b"CONOUT$\x00".as_ptr() as *const i8,
                                   GENERIC_READ | GENERIC_WRITE,
                                   FILE_SHARE_READ | FILE_SHARE_WRITE,
                                   ::std::ptr::null_mut(), OPEN_EXISTING, 0,
                                   ::std::ptr::null_mut())
         };
-        if handle == winapi::INVALID_HANDLE_VALUE {
+        if handle == INVALID_HANDLE_VALUE {
             return Err(::std::io::Error::last_os_error());
         }
 
@@ -253,6 +261,7 @@ mod windows {
         stream.flush()
     }
 }
+
 
 #[cfg(unix)]
 use unix::{read_password_from_stdin, display_on_tty};
