@@ -17,15 +17,17 @@ fn close_stdin() {
 }
 
 #[cfg(windows)]
-extern crate kernel32;
-#[cfg(windows)]
 extern crate winapi;
 
 #[cfg(windows)]
 fn close_stdin() {
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::processenv::GetStdHandle;
+    use winapi::um::winbase::STD_INPUT_HANDLE;
+
     unsafe {
-        kernel32::CloseHandle(
-            kernel32::GetStdHandle(winapi::STD_INPUT_HANDLE)
+        CloseHandle(
+            GetStdHandle(STD_INPUT_HANDLE)
         );
     }
 }
