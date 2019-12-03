@@ -3,12 +3,14 @@
 [![Build Status](https://travis-ci.org/conradkdotcom/rpassword.svg?branch=master)](https://travis-ci.org/conradkdotcom/rpassword)
 [![Build status](https://ci.appveyor.com/api/projects/status/h7ak407y28k0ufw2?svg=true)](https://ci.appveyor.com/project/conradkdotcom/rpassword)
 
-This [Rust](http://www.rust-lang.org/) package allows you to safely read
-passwords from standard input in a console application.
+`rpassword` package allows you to safely read passwords in a console application on Linux, OSX and Windows.
 
-You can build the documentation with `cargo doc` or [view it online](https://docs.rs/rpassword/).
+## Supporting `rpassword`
 
-I'd appreciate feedback if you use this library :-)
+The development and maintenance of `rpassword` is made possible thanks to the support of generous backers. If you'd like to participate in its funding, you can:
+
+- [Back the project on Patreon](https://w500ww.patreon.com/conradkdotcom)
+- [Make a pledge on Liberapay](https://liberapay.com/conradkdotcom/)
 
 ## Usage
 
@@ -43,8 +45,9 @@ fn main() {
 }
 ```
 
-## Contributors
+The full API documentation is available at [https://docs.rs/rpassword](https://docs.rs/rpassword).
 
+## Contributors
 
 We welcome contribution from everyone. Feel free to open an issue or a pull request at any time.
 
@@ -67,3 +70,7 @@ Here's a list of existing `rpassword` contributors:
 * [@yandexx](https://github.com/yandexx)
 
 Thank you very much for your help!  :smiley:  :heart:
+
+## License
+
+The source code is released under the Apache 2.0 license.
