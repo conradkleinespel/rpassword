@@ -142,7 +142,7 @@ mod unix {
             // terminal hiding code
             let input = match source {
                 Source::Tty(mut tty) => tty.read_line(&mut password),
-                Source::Stdin(mut stdin) => stdin.read_line(&mut password),
+                Source::Stdin(stdin) => stdin.read_line(&mut password),
             };
 
             match input {
