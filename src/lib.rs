@@ -24,17 +24,17 @@ mod zero_on_drop;
 use zero_on_drop::ZeroOnDrop;
 
 /// Removes the \n from the read line
-fn fixes_newline(password: &mut String) {
+fn fixes_newline(password: &mut ZeroOnDrop) {
     // We may not have a newline, e.g. if user sent CTRL-D or if
     // this is not a TTY.
 
     if password.ends_with('\n') {
         // Remove the \n from the line if present
-        password.pop();
+        password.zero_pop();
 
         // Remove the \r from the line if present
         if password.ends_with('\r') {
-            password.pop();
+            password.zero_pop();
         }
     }
 }

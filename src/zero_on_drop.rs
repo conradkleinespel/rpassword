@@ -15,6 +15,20 @@ impl ZeroOnDrop {
     pub fn into_inner(mut self) -> String {
         mem::replace(&mut self.inner.0, String::new())
     }
+
+    pub fn zero_pop(&mut self) {
+        let old = self.len();
+        self.pop();
+        let new = self.len();
+
+        while self.len() < old {
+            self.push('\0');
+        }
+
+        while self.len() > new {
+            self.pop();
+        }
+    }
 }
 
 impl ops::Deref for ZeroOnDrop {
