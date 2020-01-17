@@ -19,19 +19,9 @@ extern crate libc;
 extern crate winapi;
 
 use std::io::Write;
-use std::{ptr, sync::atomic};
 
-/// Sets all bytes of a String to 0
-fn zero_memory(s: &mut String) {
-    let default = u8::default();
-
-    for c in unsafe { s.as_bytes_mut() } {
-        unsafe { ptr::write_volatile(c, default) };
-    }
-
-    atomic::fence(atomic::Ordering::SeqCst);
-    atomic::compiler_fence(atomic::Ordering::SeqCst);
-}
+mod zero_on_drop;
+use zero_on_drop::ZeroOnDrop;
 
 /// Removes the \n from the read line
 fn fixes_newline(password: &mut String) {
@@ -70,7 +60,7 @@ mod unix {
 
     /// Reads a password from stdin
     pub fn read_password_from_stdin(open_tty: bool) -> ::std::io::Result<String> {
-        let mut password = String::new();
+        let mut password = super::ZeroOnDrop::new();
 
         enum Source {
             Tty(io::BufReader<::std::fs::File>),
@@ -119,39 +109,24 @@ mod unix {
                     // Reset the terminal and quit.
                     io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term_orig) })?;
 
-                    super::zero_memory(&mut password);
                     return Err(err);
                 }
             };
 
             // Reset the terminal.
-            match io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term_orig) }) {
-                Ok(_) => {}
-                Err(err) => {
-                    super::zero_memory(&mut password);
-                    return Err(err);
-                }
-            }
+            io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term_orig) })?;
         } else {
             // If we don't have a TTY, the input was piped so we bypass
             // terminal hiding code
-            let input = match source {
-                Source::Tty(mut tty) => tty.read_line(&mut password),
-                Source::Stdin(mut stdin) => stdin.read_line(&mut password),
+            match source {
+                Source::Tty(mut tty) => tty.read_line(&mut password)?,
+                Source::Stdin(stdin) => stdin.read_line(&mut password)?,
             };
-
-            match input {
-                Ok(_) => {}
-                Err(err) => {
-                    super::zero_memory(&mut password);
-                    return Err(err);
-                }
-            }
         }
 
         super::fixes_newline(&mut password);
 
-        Ok(password)
+        Ok(password.into_inner())
     }
 
     /// Displays a prompt on the terminal
@@ -181,7 +156,7 @@ mod windows {
 
     /// Reads a password from stdin
     pub fn read_password_from_stdin(open_tty: bool) -> io::Result<String> {
-        let mut password = String::new();
+        let mut password = super::ZeroOnDrop::new();
 
         // Get the stdin handle
         let handle = if open_tty {
@@ -219,13 +194,7 @@ mod windows {
         let handle = source.as_raw_handle();
 
         // Check the response.
-        match input {
-            Ok(_) => {}
-            Err(err) => {
-                super::zero_memory(&mut password);
-                return Err(err);
-            }
-        };
+        let _ = input?;
 
         // Set the the mode back to normal
         if unsafe { SetConsoleMode(handle, mode) } == 0 {
@@ -237,7 +206,7 @@ mod windows {
 		// Newline for windows which otherwise prints on the same line.
 		println!();
 
-        Ok(password)
+        Ok(password.into_inner())
     }
 
     /// Displays a prompt on the terminal
@@ -273,13 +242,12 @@ pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<Stri
     where T: ::std::io::BufRead {
     match source {
         Some(mut reader) => {
-            let mut password = String::new();
+            let mut password = ZeroOnDrop::new();
             if let Err(err) = reader.read_line(&mut password) {
-                zero_memory(&mut password);
                 Err(err)
             } else {
                 fixes_newline(&mut password);
-                Ok(password)
+                Ok(password.into_inner())
             }
         },
         None => read_password_from_stdin(false),
