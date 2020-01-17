@@ -56,8 +56,9 @@ pub fn read_password() -> ::std::io::Result<String> {
 
 #[cfg(unix)]
 mod unix {
-    use libc::{c_int, isatty, tcgetattr, tcsetattr, TCSANOW, ECHO, ECHONL, STDIN_FILENO};
+    use libc::{c_int, termios, isatty, tcsetattr, TCSANOW, ECHO, ECHONL, STDIN_FILENO};
     use std::io::{self, BufRead, Write};
+    use std::mem;
     use std::os::unix::io::AsRawFd;
 
     /// Turns a C function return into an IO Result
@@ -66,6 +67,12 @@ mod unix {
             0 => Ok(()),
             _ => Err(::std::io::Error::last_os_error()),
         }
+    }
+
+    fn safe_tcgetattr(fd: c_int) -> ::std::io::Result<termios> {
+        let mut term = mem::MaybeUninit::<::unix::termios>::uninit();
+        io_result(unsafe { ::libc::tcgetattr(fd, term.as_mut_ptr()) })?;
+        Ok(unsafe { term.assume_init() })
     }
 
     /// Reads a password from stdin
@@ -92,10 +99,8 @@ mod unix {
             // Make two copies of the terminal settings. The first one will be modified
             // and the second one will act as a backup for when we want to set the
             // terminal back to its original state.
-            let mut term = unsafe { ::std::mem::uninitialized() };
-            let mut term_orig = unsafe { ::std::mem::uninitialized() };
-            io_result(unsafe { tcgetattr(tty_fd, &mut term) })?;
-            io_result(unsafe { tcgetattr(tty_fd, &mut term_orig) })?;
+            let mut term      = safe_tcgetattr(tty_fd)?;
+            let     term_orig = safe_tcgetattr(tty_fd)?;
 
             // Hide the password. This is what makes this function useful.
             term.c_lflag &= !ECHO;
@@ -137,7 +142,7 @@ mod unix {
             // terminal hiding code
             let input = match source {
                 Source::Tty(mut tty) => tty.read_line(&mut password),
-                Source::Stdin(mut stdin) => stdin.read_line(&mut password),
+                Source::Stdin(stdin) => stdin.read_line(&mut password),
             };
 
             match input {
