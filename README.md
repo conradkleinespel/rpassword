@@ -68,6 +68,7 @@ Here's a list of existing `rpassword` contributors:
 * [@retep998](https://github.com/retep998)
 * [@steveatinfincia](https://github.com/steveatinfincia)
 * [@teythoon](https://github.com/teythoon)
+* [@tov](https://github.com/tov)
 * [@yandexx](https://github.com/yandexx)
 
 Thank you very much for your help!  :smiley:  :heart:
