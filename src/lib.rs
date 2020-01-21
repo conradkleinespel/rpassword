@@ -30,11 +30,11 @@ fn fixes_newline(password: &mut ZeroOnDrop) {
 
     if password.ends_with('\n') {
         // Remove the \n from the line if present
-        password.zero_pop();
+        password.pop();
 
         // Remove the \r from the line if present
         if password.ends_with('\r') {
-            password.zero_pop();
+            password.pop();
         }
     }
 }
