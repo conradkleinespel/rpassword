@@ -48,6 +48,22 @@ fn main() {
 
 The full API documentation is available at [https://docs.rs/rpassword](https://docs.rs/rpassword).
 
+## Optional feature
+
+The optional feature **enhanced_mock** can be enabled to change `read_password_with_reader` signature from 
+```
+pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<String>
+    where
+        T: ::std::io::BufRead
+```
+to
+```
+pub fn read_password_with_reader<T>(source: Option<&mut T>) -> ::std::io::Result<String>
+    where
+        T: ::std::io::BufRead
+```
+allowing to call `read_password_with_reader` multiple times with the same reader.
+
 ## Contributors
 
 We welcome contribution from everyone. Feel free to open an issue or a pull request at any time.
