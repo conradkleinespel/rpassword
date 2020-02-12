@@ -38,13 +38,14 @@ fn close_stdin() {
 }
 
 fn mock_input_crlf() -> Cursor<&'static [u8]> {
-    Cursor::new(&b"A mocked response.\r\n"[..])
+    Cursor::new(&b"A mocked response.\r\nAnother mocked response.\r\n"[..])
 }
 
 fn mock_input_lf() -> Cursor<&'static [u8]> {
-    Cursor::new(&b"A mocked response.\n"[..])
+    Cursor::new(&b"A mocked response.\nAnother mocked response.\n"[..])
 }
 
+#[cfg(not(feature = "enhanced_mock"))]
 #[test]
 fn can_read_from_redirected_input() {
     close_stdin();
@@ -53,4 +54,23 @@ fn can_read_from_redirected_input() {
     assert_eq!(response, "A mocked response.");
     let response = ::read_password_with_reader(Some(mock_input_lf())).unwrap();
     assert_eq!(response, "A mocked response.");
+}
+
+#[cfg(feature = "enhanced_mock")]
+#[test]
+fn can_read_from_redirected_input_many_times() {
+    close_stdin();
+
+    let mut reader_crlf = mock_input_crlf();
+
+    let response = ::read_password_with_reader(Some(&mut reader_crlf)).unwrap();
+    assert_eq!(response, "A mocked response.");
+    let response = ::read_password_with_reader(Some(&mut reader_crlf)).unwrap();
+    assert_eq!(response, "Another mocked response.");
+
+    let mut reader_lf = mock_input_lf();
+    let response = ::read_password_with_reader(Some(&mut reader_lf)).unwrap();
+    assert_eq!(response, "A mocked response.");
+    let response = ::read_password_with_reader(Some(&mut reader_lf)).unwrap();
+    assert_eq!(response, "Another mocked response.");
 }

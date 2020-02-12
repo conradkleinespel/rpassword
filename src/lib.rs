@@ -39,11 +39,6 @@ fn fixes_newline(password: &mut ZeroOnDrop) {
     }
 }
 
-/// Reads a password from STDIN
-pub fn read_password() -> ::std::io::Result<String> {
-    read_password_with_reader(None::<::std::io::Empty>)
-}
-
 #[cfg(unix)]
 mod unix {
     use libc::{c_int, termios, isatty, tcsetattr, TCSANOW, ECHO, ECHONL, STDIN_FILENO};
@@ -242,18 +237,115 @@ use unix::{read_password_from_stdin, display_on_tty};
 use windows::{read_password_from_stdin, display_on_tty};
 
 /// Reads a password from anything that implements BufRead
-pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<String>
-    where T: ::std::io::BufRead {
-    match source {
-        Some(mut reader) => {
-            let mut password = ZeroOnDrop::new();
-            reader.read_line(&mut password)?;
-            fixes_newline(&mut password);
-            Ok(password.into_inner())
-        },
-        None => read_password_from_stdin(false),
+#[cfg(not(feature = "enhanced_mock"))]
+mod legacy_mock {
+    use super::*;
+
+    /// Reads a password from STDIN
+    pub fn read_password() -> ::std::io::Result<String> {
+        read_password_with_reader(None::<::std::io::Empty>)
+    }
+
+    /// Reads a password from anything that implements BufRead
+    pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<String>
+    where
+        T: ::std::io::BufRead,
+    {
+        match source {
+            Some(mut reader) => {
+                let mut password = ZeroOnDrop::new();
+                reader.read_line(&mut password)?;
+                fixes_newline(&mut password);
+                Ok(password.into_inner())
+            },
+            None => read_password_from_stdin(false),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::io::Cursor;
+
+        fn mock_input_crlf() -> Cursor<&'static [u8]> {
+            Cursor::new(&b"A mocked response.\r\n\r\n"[..])
+        }
+
+        fn mock_input_lf() -> Cursor<&'static [u8]> {
+            Cursor::new(&b"A mocked response.\n"[..])
+        }
+
+        #[test]
+        fn can_read_from_redirected_input() {
+            let response = ::read_password_with_reader(Some(mock_input_crlf())).unwrap();
+            assert_eq!(response, "A mocked response.");
+            let response = ::read_password_with_reader(Some(mock_input_lf())).unwrap();
+            assert_eq!(response, "A mocked response.");
+        }
     }
 }
+
+#[cfg(feature = "enhanced_mock")]
+mod enhanced_mock {
+    use super::*;
+
+    /// Reads a password from STDIN
+    pub fn read_password() -> ::std::io::Result<String> {
+        read_password_with_reader(None::<&mut ::std::io::Empty>)
+    }
+
+    /// Reads a password from anything that implements BufRead
+    pub fn read_password_with_reader<T>(source: Option<&mut T>) -> ::std::io::Result<String>
+    where
+        T: ::std::io::BufRead,
+    {
+        match source {
+            Some(reader) => {
+                let mut password = ZeroOnDrop::new();
+                if let Err(err) = reader.read_line(&mut password) {
+                    Err(err)
+                } else {
+                    fixes_newline(&mut password);
+                    Ok(password.into_inner())
+                }
+            }
+            None => read_password_from_stdin(false),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::io::Cursor;
+
+        fn mock_input_crlf() -> Cursor<&'static [u8]> {
+            Cursor::new(&b"A mocked response.\r\nAnother mocked response.\r\n"[..])
+        }
+
+        fn mock_input_lf() -> Cursor<&'static [u8]> {
+            Cursor::new(&b"A mocked response.\nAnother mocked response.\n"[..])
+        }
+
+        #[test]
+        fn can_read_from_redirected_input_many_times() {
+            let mut reader_crlf = mock_input_crlf();
+
+            let response = ::read_password_with_reader(Some(&mut reader_crlf)).unwrap();
+            assert_eq!(response, "A mocked response.");
+            let response = ::read_password_with_reader(Some(&mut reader_crlf)).unwrap();
+            assert_eq!(response, "Another mocked response.");
+
+            let mut reader_lf = mock_input_lf();
+            let response = ::read_password_with_reader(Some(&mut reader_lf)).unwrap();
+            assert_eq!(response, "A mocked response.");
+            let response = ::read_password_with_reader(Some(&mut reader_lf)).unwrap();
+            assert_eq!(response, "Another mocked response.");
+        }
+    }
+}
+
+#[cfg(feature = "enhanced_mock")]
+pub use enhanced_mock::{read_password, read_password_with_reader};
+#[cfg(not(feature = "enhanced_mock"))]
+pub use legacy_mock::{read_password, read_password_with_reader};
 
 /// Reads a password from the terminal
 pub fn read_password_from_tty(prompt: Option<&str>)
@@ -280,25 +372,4 @@ pub fn prompt_password_stderr(prompt: &str) -> std::io::Result<String> {
     write!(stderr, "{}", prompt)?;
     stderr.flush()?;
     read_password()
-}
-
-#[cfg(test)]
-mod tests {
-    use std::io::Cursor;
-
-    fn mock_input_crlf() -> Cursor<&'static [u8]> {
-        Cursor::new(&b"A mocked response.\r\n"[..])
-    }
-
-    fn mock_input_lf() -> Cursor<&'static [u8]> {
-        Cursor::new(&b"A mocked response.\n"[..])
-    }
-
-    #[test]
-    fn can_read_from_redirected_input() {
-        let response = ::read_password_with_reader(Some(mock_input_crlf())).unwrap();
-        assert_eq!(response, "A mocked response.");
-        let response = ::read_password_with_reader(Some(mock_input_lf())).unwrap();
-        assert_eq!(response, "A mocked response.");
-    }
 }
