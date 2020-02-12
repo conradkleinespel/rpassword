@@ -107,19 +107,11 @@ mod unix {
                 Source::Stdin(ref mut stdin) => stdin.read_line(&mut password),
             };
 
-            // Check the response.
-            match input {
-                Ok(_) => {}
-                Err(err) => {
-                    // Reset the terminal and quit.
-                    io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term_orig) })?;
-
-                    return Err(err);
-                }
-            };
-
             // Reset the terminal.
             io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term_orig) })?;
+
+            // Return if we have an error
+            input?;
         } else {
             // If we don't have a TTY, the input was piped so we bypass
             // terminal hiding code
@@ -199,7 +191,7 @@ mod windows {
         let handle = source.as_raw_handle();
 
         // Check the response.
-        let _ = input?;
+        input?;
 
         // Set the the mode back to normal
         if unsafe { SetConsoleMode(handle, mode) } == 0 {
@@ -208,8 +200,8 @@ mod windows {
 
         super::fixes_newline(&mut password);
 
-		// Newline for windows which otherwise prints on the same line.
-		println!();
+        // Newline for windows which otherwise prints on the same line.
+        println!();
 
         Ok(password.into_inner())
     }
