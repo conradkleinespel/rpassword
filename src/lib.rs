@@ -240,12 +240,9 @@ pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<Stri
     match source {
         Some(mut reader) => {
             let mut password = ZeroOnDrop::new();
-            if let Err(err) = reader.read_line(&mut password) {
-                Err(err)
-            } else {
-                fixes_newline(&mut password);
-                Ok(password.into_inner())
-            }
+            reader.read_line(&mut password)?;
+            fixes_newline(&mut password);
+            Ok(password.into_inner())
         },
         None => read_password_from_stdin(false),
     }
