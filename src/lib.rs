@@ -151,9 +151,9 @@ mod windows {
     use winapi::um::winnt::{
         GENERIC_READ, GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     };
-    use winapi::um::fileapi::{CreateFileA, OPEN_EXISTING};
+    use winapi::um::fileapi::{CreateFileA, GetFileType, OPEN_EXISTING};
     use winapi::um::processenv::GetStdHandle;
-    use winapi::um::winbase::STD_INPUT_HANDLE;
+    use winapi::um::winbase::{FILE_TYPE_PIPE, STD_INPUT_HANDLE};
     use winapi::um::handleapi::INVALID_HANDLE_VALUE;
     use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
     use winapi::shared::minwindef::LPDWORD;
@@ -181,16 +181,21 @@ mod windows {
             return Err(::std::io::Error::last_os_error());
         }
 
-        // Get the old mode so we can reset back to it when we are done
         let mut mode = 0;
-        if unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) } == 0 {
-            return Err(::std::io::Error::last_os_error());
-        }
 
-        // We want to be able to read line by line, and we still want backspace to work
-        let new_mode_flags = ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT;
-        if unsafe { SetConsoleMode(handle, new_mode_flags) } == 0 {
-            return Err(::std::io::Error::last_os_error());
+        // Console mode does not apply when stdin is piped
+        let handle_type = unsafe { GetFileType(handle) };
+        if handle_type != FILE_TYPE_PIPE {
+            // Get the old mode so we can reset back to it when we are done
+            if unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) } == 0 {
+                return Err(::std::io::Error::last_os_error());
+            }
+
+            // We want to be able to read line by line, and we still want backspace to work
+            let new_mode_flags = ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT;
+            if unsafe { SetConsoleMode(handle, new_mode_flags) } == 0 {
+                return Err(::std::io::Error::last_os_error());
+            }
         }
 
         // Read the password.
@@ -201,9 +206,11 @@ mod windows {
         // Check the response.
         let _ = input?;
 
-        // Set the the mode back to normal
-        if unsafe { SetConsoleMode(handle, mode) } == 0 {
-            return Err(::std::io::Error::last_os_error());
+        if handle_type != FILE_TYPE_PIPE {
+            // Set the the mode back to normal
+            if unsafe { SetConsoleMode(handle, mode) } == 0 {
+                return Err(::std::io::Error::last_os_error());
+            }
         }
 
         super::fixes_newline(&mut password);
