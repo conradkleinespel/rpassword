@@ -80,6 +80,7 @@ Here's a list of existing `rpassword` contributors:
 * [@JanLikar](https://github.com/JanLikar)
 * [@joshuef](https://github.com/joshuef)
 * [@longshorej](https://github.com/longshorej)
+* [@nicokoch](https://github.com/nicokoch)
 * [@petevine](https://github.com/petevine)
 * [@psych0d0g](https://github.com/psych0d0g)
 * [@retep998](https://github.com/retep998)
