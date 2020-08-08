@@ -45,18 +45,6 @@ fn mock_input_lf() -> Cursor<&'static [u8]> {
     Cursor::new(&b"A mocked response.\nAnother mocked response.\n"[..])
 }
 
-#[cfg(not(feature = "enhanced_mock"))]
-#[test]
-fn can_read_from_redirected_input() {
-    close_stdin();
-
-    let response = ::read_password_with_reader(Some(mock_input_crlf())).unwrap();
-    assert_eq!(response, "A mocked response.");
-    let response = ::read_password_with_reader(Some(mock_input_lf())).unwrap();
-    assert_eq!(response, "A mocked response.");
-}
-
-#[cfg(feature = "enhanced_mock")]
 #[test]
 fn can_read_from_redirected_input_many_times() {
     close_stdin();
