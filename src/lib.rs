@@ -102,19 +102,11 @@ mod unix {
                 Source::Stdin(ref mut stdin) => stdin.read_line(&mut password),
             };
 
-            // Check the response.
-            match input {
-                Ok(_) => {}
-                Err(err) => {
-                    // Reset the terminal and quit.
-                    io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term_orig) })?;
-
-                    return Err(err);
-                }
-            };
-
             // Reset the terminal.
             io_result(unsafe { tcsetattr(tty_fd, TCSANOW, &term_orig) })?;
+
+            // Return if we have an error
+            input?;
         } else {
             // If we don't have a TTY, the input was piped so we bypass
             // terminal hiding code
@@ -146,9 +138,9 @@ mod windows {
     use winapi::um::winnt::{
         GENERIC_READ, GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     };
-    use winapi::um::fileapi::{CreateFileA, OPEN_EXISTING};
+    use winapi::um::fileapi::{CreateFileA, GetFileType, OPEN_EXISTING};
     use winapi::um::processenv::GetStdHandle;
-    use winapi::um::winbase::STD_INPUT_HANDLE;
+    use winapi::um::winbase::{FILE_TYPE_PIPE, STD_INPUT_HANDLE};
     use winapi::um::handleapi::INVALID_HANDLE_VALUE;
     use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
     use winapi::shared::minwindef::LPDWORD;
@@ -176,16 +168,21 @@ mod windows {
             return Err(::std::io::Error::last_os_error());
         }
 
-        // Get the old mode so we can reset back to it when we are done
         let mut mode = 0;
-        if unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) } == 0 {
-            return Err(::std::io::Error::last_os_error());
-        }
 
-        // We want to be able to read line by line, and we still want backspace to work
-        let new_mode_flags = ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT;
-        if unsafe { SetConsoleMode(handle, new_mode_flags) } == 0 {
-            return Err(::std::io::Error::last_os_error());
+        // Console mode does not apply when stdin is piped
+        let handle_type = unsafe { GetFileType(handle) };
+        if handle_type != FILE_TYPE_PIPE {
+            // Get the old mode so we can reset back to it when we are done
+            if unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) } == 0 {
+                return Err(::std::io::Error::last_os_error());
+            }
+
+            // We want to be able to read line by line, and we still want backspace to work
+            let new_mode_flags = ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT;
+            if unsafe { SetConsoleMode(handle, new_mode_flags) } == 0 {
+                return Err(::std::io::Error::last_os_error());
+            }
         }
 
         // Read the password.
@@ -194,17 +191,19 @@ mod windows {
         let handle = source.as_raw_handle();
 
         // Check the response.
-        let _ = input?;
+        input?;
 
-        // Set the the mode back to normal
-        if unsafe { SetConsoleMode(handle, mode) } == 0 {
-            return Err(::std::io::Error::last_os_error());
+        if handle_type != FILE_TYPE_PIPE {
+            // Set the the mode back to normal
+            if unsafe { SetConsoleMode(handle, mode) } == 0 {
+                return Err(::std::io::Error::last_os_error());
+            }
         }
 
         super::fixes_newline(&mut password);
 
-		// Newline for windows which otherwise prints on the same line.
-		println!();
+        // Newline for windows which otherwise prints on the same line.
+        println!();
 
         Ok(password.into_inner())
     }
@@ -237,6 +236,7 @@ use unix::{read_password_from_stdin, display_on_tty};
 #[cfg(windows)]
 use windows::{read_password_from_stdin, display_on_tty};
 
+/// Reads a password from anything that implements BufRead
 #[cfg(not(feature = "enhanced_mock"))]
 mod legacy_mock {
     use super::*;
@@ -254,13 +254,10 @@ mod legacy_mock {
         match source {
             Some(mut reader) => {
                 let mut password = ZeroOnDrop::new();
-                if let Err(err) = reader.read_line(&mut password) {
-                    Err(err)
-                } else {
-                    fixes_newline(&mut password);
-                    Ok(password.into_inner())
-                }
-            }
+                reader.read_line(&mut password)?;
+                fixes_newline(&mut password);
+                Ok(password.into_inner())
+            },
             None => read_password_from_stdin(false),
         }
     }
