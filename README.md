@@ -75,6 +75,7 @@ Here's a list of existing `rpassword` contributors:
 * [@DaveLancaster](https://github.com/DaveLancaster)
 * [@dcuddeback](https://github.com/dcuddeback)
 * [@Draphar](https://github.com/Draphar)
+* [@dvermd](https://github.com/dvermd)
 * [@equalsraf](https://github.com/equalsraf)
 * [@Heliozoa](https://github.com/Heliozoa)
 * [@JanLikar](https://github.com/JanLikar)
