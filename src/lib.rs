@@ -237,55 +237,7 @@ use unix::{read_password_from_stdin, display_on_tty};
 use windows::{read_password_from_stdin, display_on_tty};
 
 /// Reads a password from anything that implements BufRead
-#[cfg(not(feature = "enhanced_mock"))]
-mod legacy_mock {
-    use super::*;
-
-    /// Reads a password from STDIN
-    pub fn read_password() -> ::std::io::Result<String> {
-        read_password_with_reader(None::<::std::io::Empty>)
-    }
-
-    /// Reads a password from anything that implements BufRead
-    pub fn read_password_with_reader<T>(source: Option<T>) -> ::std::io::Result<String>
-    where
-        T: ::std::io::BufRead,
-    {
-        match source {
-            Some(mut reader) => {
-                let mut password = ZeroOnDrop::new();
-                reader.read_line(&mut password)?;
-                fixes_newline(&mut password);
-                Ok(password.into_inner())
-            },
-            None => read_password_from_stdin(false),
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use std::io::Cursor;
-
-        fn mock_input_crlf() -> Cursor<&'static [u8]> {
-            Cursor::new(&b"A mocked response.\r\n\r\n"[..])
-        }
-
-        fn mock_input_lf() -> Cursor<&'static [u8]> {
-            Cursor::new(&b"A mocked response.\n"[..])
-        }
-
-        #[test]
-        fn can_read_from_redirected_input() {
-            let response = ::read_password_with_reader(Some(mock_input_crlf())).unwrap();
-            assert_eq!(response, "A mocked response.");
-            let response = ::read_password_with_reader(Some(mock_input_lf())).unwrap();
-            assert_eq!(response, "A mocked response.");
-        }
-    }
-}
-
-#[cfg(feature = "enhanced_mock")]
-mod enhanced_mock {
+mod mock {
     use super::*;
 
     /// Reads a password from STDIN
@@ -342,10 +294,7 @@ mod enhanced_mock {
     }
 }
 
-#[cfg(feature = "enhanced_mock")]
-pub use enhanced_mock::{read_password, read_password_with_reader};
-#[cfg(not(feature = "enhanced_mock"))]
-pub use legacy_mock::{read_password, read_password_with_reader};
+pub use mock::{read_password, read_password_with_reader};
 
 /// Reads a password from the terminal
 pub fn read_password_from_tty(prompt: Option<&str>)
