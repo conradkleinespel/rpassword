@@ -1,14 +1,14 @@
-use std::{ops, mem, ptr, sync::atomic};
+use std::{mem, ops, ptr, sync::atomic};
 
 // Holds a string and zeros it when we're done.
 pub struct ZeroOnDrop {
-    inner: Inner
+    inner: Inner,
 }
 
 impl ZeroOnDrop {
     pub fn new() -> Self {
         ZeroOnDrop {
-            inner: Inner(String::new())
+            inner: Inner(String::new()),
         }
     }
 
@@ -52,4 +52,3 @@ impl Inner {
         atomic::compiler_fence(atomic::Ordering::SeqCst);
     }
 }
-

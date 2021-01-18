@@ -1,8 +1,7 @@
 # Rustastic Password
 
-[![Build Status](https://travis-ci.org/conradkleinespel/rpassword.svg?branch=master)](https://travis-ci.org/conradkleinespel/rpassword)
+![CI](https://github.com/conradkleinespel/rpassword/workflows/CI/badge.svg)
 [![Build status](https://ci.appveyor.com/api/projects/status/h7ak407y28k0ufw2?svg=true)](https://ci.appveyor.com/project/conradkleinespel/rpassword)
-[![Chat on Discord](https://img.shields.io/badge/chat-on%20discord-7289DA)](https://discord.gg/9zXtYqQ)
 
 `rpassword` allows you to safely read passwords in a console application on Linux, OSX and Windows.
 
