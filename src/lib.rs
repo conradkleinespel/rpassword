@@ -41,7 +41,7 @@ fn fixes_newline(password: &mut ZeroOnDrop) {
 
 #[cfg(unix)]
 mod unix {
-    use libc::{c_int, termios, isatty, tcsetattr, TCSANOW, ECHO, ECHONL, STDIN_FILENO};
+    use libc::{c_int, isatty, tcsetattr, termios, ECHO, ECHONL, STDIN_FILENO, TCSANOW};
     use std::io::{self, BufRead, Write};
     use std::mem;
     use std::os::unix::io::AsRawFd;
@@ -84,8 +84,8 @@ mod unix {
             // Make two copies of the terminal settings. The first one will be modified
             // and the second one will act as a backup for when we want to set the
             // terminal back to its original state.
-            let mut term      = safe_tcgetattr(tty_fd)?;
-            let     term_orig = safe_tcgetattr(tty_fd)?;
+            let mut term = safe_tcgetattr(tty_fd)?;
+            let term_orig = safe_tcgetattr(tty_fd)?;
 
             // Hide the password. This is what makes this function useful.
             term.c_lflag &= !ECHO;
@@ -123,8 +123,7 @@ mod unix {
 
     /// Displays a prompt on the terminal
     pub fn display_on_tty(prompt: &str) -> ::std::io::Result<()> {
-        let mut stream =
-            ::std::fs::OpenOptions::new().write(true).open("/dev/tty")?;
+        let mut stream = ::std::fs::OpenOptions::new().write(true).open("/dev/tty")?;
         write!(stream, "{}", prompt)?;
         stream.flush()
     }
@@ -132,19 +131,17 @@ mod unix {
 
 #[cfg(windows)]
 mod windows {
-    use std::ptr;
     use std::io::{self, Write};
-    use std::os::windows::io::{FromRawHandle, AsRawHandle};
-    use winapi::um::winnt::{
-        GENERIC_READ, GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    };
+    use std::os::windows::io::{AsRawHandle, FromRawHandle};
+    use std::ptr;
+    use winapi::shared::minwindef::LPDWORD;
+    use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
     use winapi::um::fileapi::{CreateFileA, GetFileType, OPEN_EXISTING};
+    use winapi::um::handleapi::INVALID_HANDLE_VALUE;
     use winapi::um::processenv::GetStdHandle;
     use winapi::um::winbase::{FILE_TYPE_PIPE, STD_INPUT_HANDLE};
-    use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-    use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
-    use winapi::shared::minwindef::LPDWORD;
     use winapi::um::wincon::{ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT};
+    use winapi::um::winnt::{FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE};
 
     /// Reads a password from stdin
     pub fn read_password_from_stdin(open_tty: bool) -> io::Result<String> {
@@ -153,16 +150,18 @@ mod windows {
         // Get the stdin handle
         let handle = if open_tty {
             unsafe {
-                CreateFileA(b"CONIN$\x00".as_ptr() as *const i8,
-                                      GENERIC_READ | GENERIC_WRITE,
-                                      FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                      ptr::null_mut(), OPEN_EXISTING, 0,
-                                      ptr::null_mut())
+                CreateFileA(
+                    b"CONIN$\x00".as_ptr() as *const i8,
+                    GENERIC_READ | GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    ptr::null_mut(),
+                    OPEN_EXISTING,
+                    0,
+                    ptr::null_mut(),
+                )
             }
         } else {
-            unsafe {
-                GetStdHandle(STD_INPUT_HANDLE)
-            }
+            unsafe { GetStdHandle(STD_INPUT_HANDLE) }
         };
         if handle == INVALID_HANDLE_VALUE {
             return Err(::std::io::Error::last_os_error());
@@ -211,30 +210,31 @@ mod windows {
     /// Displays a prompt on the terminal
     pub fn display_on_tty(prompt: &str) -> ::std::io::Result<()> {
         let handle = unsafe {
-            CreateFileA(b"CONOUT$\x00".as_ptr() as *const i8,
-                                  GENERIC_READ | GENERIC_WRITE,
-                                  FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                  ::std::ptr::null_mut(), OPEN_EXISTING, 0,
-                                  ::std::ptr::null_mut())
+            CreateFileA(
+                b"CONOUT$\x00".as_ptr() as *const i8,
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                ::std::ptr::null_mut(),
+                OPEN_EXISTING,
+                0,
+                ::std::ptr::null_mut(),
+            )
         };
         if handle == INVALID_HANDLE_VALUE {
             return Err(::std::io::Error::last_os_error());
         }
 
-        let mut stream = unsafe {
-            ::std::fs::File::from_raw_handle(handle)
-        };
+        let mut stream = unsafe { ::std::fs::File::from_raw_handle(handle) };
 
         write!(stream, "{}", prompt)?;
         stream.flush()
     }
 }
 
-
 #[cfg(unix)]
-use unix::{read_password_from_stdin, display_on_tty};
+use unix::{display_on_tty, read_password_from_stdin};
 #[cfg(windows)]
-use windows::{read_password_from_stdin, display_on_tty};
+use windows::{display_on_tty, read_password_from_stdin};
 
 /// Reads a password from anything that implements BufRead
 mod mock {
@@ -297,8 +297,7 @@ mod mock {
 pub use mock::{read_password, read_password_with_reader};
 
 /// Reads a password from the terminal
-pub fn read_password_from_tty(prompt: Option<&str>)
-                              -> ::std::io::Result<String> {
+pub fn read_password_from_tty(prompt: Option<&str>) -> ::std::io::Result<String> {
     if let Some(prompt) = prompt {
         display_on_tty(prompt)?;
     }

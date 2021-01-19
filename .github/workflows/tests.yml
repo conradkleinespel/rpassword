@@ -17,3 +17,5 @@ jobs:
         name: Run cargo test
         with:
           command: test
+      - name: Run terminal tests
+        run: ./tests/tests-unix.sh
