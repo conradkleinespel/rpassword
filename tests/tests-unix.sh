@@ -13,14 +13,14 @@ DIR="$( dirname $( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd ) )"
 #   - diff tests/stderr <(printf "prompt_password_stderrprompt_reply_stderr")
 
 # STDIN comes from a pipe
-printf "1\n2\n3\n" | $DIR/target/debug/examples/tests > $DIR/tests/results_pipe_actual_stdout 2> $DIR/tests/results_pipe_actual_stderr
+printf "1\n2\n3\n" | cargo run --quiet --example tests > $DIR/tests/results_pipe_actual_stdout 2> $DIR/tests/results_pipe_actual_stderr
 diff $DIR/tests/results_pipe_expected_stdout $DIR/tests/results_pipe_actual_stdout
 echo 'pipe stdout OK'
 diff $DIR/tests/results_pipe_expected_stderr $DIR/tests/results_pipe_actual_stderr
 echo 'pipe stderr OK'
 
 # missing newline, only tested in pipe mode
-printf "1\n2\n3" | $DIR/target/debug/examples/tests > $DIR/tests/results_pipe_missing_nl_actual_stdout 2> $DIR/tests/results_pipe_missing_nl_actual_stderr
+printf "1\n2\n3" | cargo run --quiet --example tests > $DIR/tests/results_pipe_missing_nl_actual_stdout 2> $DIR/tests/results_pipe_missing_nl_actual_stderr
 diff $DIR/tests/results_pipe_missing_nl_expected_stdout $DIR/tests/results_pipe_missing_nl_actual_stdout
 echo 'pipe with missing nl stdout OK'
 diff $DIR/tests/results_pipe_missing_nl_expected_stderr $DIR/tests/results_pipe_missing_nl_actual_stderr
