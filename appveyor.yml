@@ -1,16 +1,16 @@
 environment:
   matrix:
-  - TARGET: x86_64-pc-windows-gnu
-  - TARGET: i686-pc-windows-gnu
+  - target: x86_64-pc-windows-gnu
+  - target: i686-pc-windows-gnu
+
 install:
-  - ps: Start-FileDownload "https://static.rust-lang.org/dist/rust-1.44.0-${env:TARGET}.exe"
-  - rust-1.44.0-%TARGET%.exe /VERYSILENT /NORESTART /DIR="C:\Program Files (x86)\Rust"
-  - SET PATH=%PATH%;C:\Program Files (x86)\Rust\bin
-  - SET PATH=%PATH%;C:\MinGW\bin
-  - rustc -V
-  - cargo -V
+  - appveyor DownloadFile https://win.rustup.rs/ -FileName rustup-init.exe
+  - rustup-init -yv --default-toolchain stable --default-host %target%
+  - set PATH=%PATH%;%USERPROFILE%\.cargo\bin
+  - rustc -vV
+  - cargo -vV
 
 build: false
 
 test_script:
-  - cargo test --verbose
+  - cargo test --verbose --all-targets --all-features
