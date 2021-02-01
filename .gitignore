@@ -1,5 +1,2 @@
 /target/
 /Cargo.lock
-/tests/*_actual_*
-/tests/stdout
-/tests/stderr
