@@ -2,8 +2,10 @@
 
 extern crate rpassword;
 
+use std::io::stdin;
+
 fn main() {
     println!("Prompt:");
-    let pass = rpassword::read_password().unwrap();
+    let pass = rpassword::read_password_from_stdin_lock(&mut stdin().lock()).unwrap();
     println!("Password: {}", pass);
 }

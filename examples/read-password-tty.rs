@@ -3,6 +3,7 @@
 extern crate rpassword;
 
 fn main() {
-    let pass = rpassword::read_password_from_tty(Some("Password: ")).unwrap();
+    println!("Prompt:");
+    let pass = rpassword::read_password_from_tty().unwrap();
     println!("Password: {}", pass);
 }
