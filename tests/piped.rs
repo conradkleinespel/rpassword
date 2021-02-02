@@ -18,7 +18,7 @@ fn piped_password() {
 
     // Write "secret" as the password into stdin
     let stdin = out.stdin.as_mut().unwrap();
-    stdin.write_all("secret".as_bytes()).unwrap();
+    stdin.write_all("secret\n".as_bytes()).unwrap();
 
     let out = out.wait_with_output().unwrap();
     assert!(out.status.success());
