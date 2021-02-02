@@ -14,45 +14,23 @@
 
 #[cfg(unix)]
 extern crate libc;
-extern crate rprompt;
 
 #[cfg(windows)]
 extern crate winapi;
 
-use std::io::Write;
-use std::io::{stdin, BufRead};
+extern crate rutil;
 
-mod zero_on_drop;
-use zero_on_drop::ZeroOnDrop;
-
-/// Removes the \n from the read line
-fn fixes_newline(password: &mut ZeroOnDrop) {
-    // We may not have a newline, e.g. if user sent CTRL-D or if
-    // this is not a TTY.
-
-    if password.ends_with('\n') {
-        // Remove the \n from the line if present
-        password.pop();
-
-        // Remove the \r from the line if present
-        if password.ends_with('\r') {
-            password.pop();
-        }
-    }
-}
+use rutil::fix_new_line::fix_new_line;
+use rutil::safe_string::SafeString;
+use std::io::BufRead;
 
 #[cfg(unix)]
 mod unix {
-    use libc::{c_int, isatty, tcsetattr, termios, ECHO, ECHONL, STDIN_FILENO, TCSANOW};
-    use std::io::{self, BufRead, StdinLock, Write};
+    use libc::{c_int, tcsetattr, termios, ECHO, ECHONL, STDIN_FILENO, TCSANOW};
+    use rutil::stdin_is_tty::stdin_is_tty;
+    use std::io::{self, BufRead, StdinLock};
     use std::mem;
     use std::os::unix::io::AsRawFd;
-
-    /// Checks if the program is run via a TTY
-    #[cfg(unix)]
-    pub fn stdin_tty() -> bool {
-        unsafe { isatty(STDIN_FILENO) == 1 }
-    }
 
     struct HiddenInput {
         fd: i32,
@@ -114,7 +92,7 @@ mod unix {
 
     /// Reads a password from an existing StdinLock
     pub fn read_password_from_stdin_lock(reader: &mut StdinLock) -> ::std::io::Result<String> {
-        if ::stdin_tty() {
+        if stdin_is_tty() {
             read_password_from_fd(reader, STDIN_FILENO)
         } else {
             ::read_password_from_bufread(reader)
@@ -123,47 +101,33 @@ mod unix {
 
     /// Reads a password from a given file descriptor
     fn read_password_from_fd(reader: &mut impl BufRead, fd: i32) -> ::std::io::Result<String> {
-        let mut password = super::ZeroOnDrop::new();
+        let mut password = super::SafeString::new();
 
-        let mut hidden_input = HiddenInput::new(fd)?;
+        let hidden_input = HiddenInput::new(fd)?;
 
         reader.read_line(&mut password)?;
-        super::fixes_newline(&mut password);
 
         std::mem::drop(hidden_input);
 
-        Ok(password.into_inner())
+        super::fix_new_line(password.into_inner())
     }
 }
 
 #[cfg(windows)]
 mod windows {
-    use std::io::{self, BufReader, Cursor, Write};
-    use std::io::{BufRead, Read, StdinLock};
-    use std::os::windows::io::{AsRawHandle, FromRawHandle};
-    use std::ptr;
-    use winapi::ctypes::c_void;
-    use winapi::shared::minwindef::{DWORD, LPDWORD, LPVOID};
+    use std::io::{self, BufReader};
+    use std::io::{BufRead, StdinLock};
+    use std::os::windows::io::FromRawHandle;
+    use winapi::shared::minwindef::LPDWORD;
     use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
-    use winapi::um::fileapi::{CreateFileA, GetFileType, ReadFile, OPEN_EXISTING};
+    use winapi::um::fileapi::{CreateFileA, GetFileType, OPEN_EXISTING};
     use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-    use winapi::um::minwinbase::LPOVERLAPPED;
     use winapi::um::processenv::GetStdHandle;
-    use winapi::um::winbase::{FILE_TYPE_CHAR, FILE_TYPE_PIPE, STD_INPUT_HANDLE};
+    use winapi::um::winbase::{FILE_TYPE_PIPE, STD_INPUT_HANDLE};
     use winapi::um::wincon::{ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT};
     use winapi::um::winnt::{
-        FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE, HANDLE, PVOID,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE, HANDLE,
     };
-
-    /// Checks if the program is run via a TTY
-    pub fn stdin_tty() -> bool {
-        let handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
-        if handle == INVALID_HANDLE_VALUE {
-            panic!("Invalid STDIN handle");
-        }
-
-        unsafe { GetFileType(handle) == FILE_TYPE_CHAR }
-    }
 
     struct HiddenInput {
         mode: u32,
@@ -205,10 +169,10 @@ mod windows {
                 b"CONIN$\x00".as_ptr() as *const i8,
                 GENERIC_READ | GENERIC_WRITE,
                 FILE_SHARE_READ | FILE_SHARE_WRITE,
-                ptr::null_mut(),
+                std::ptr::null_mut(),
                 OPEN_EXISTING,
                 0,
-                ptr::null_mut(),
+                std::ptr::null_mut(),
             )
         };
 
@@ -236,39 +200,37 @@ mod windows {
 
     /// Reads a password from a given file handle
     fn read_password_from_handle(reader: &mut impl BufRead, handle: HANDLE) -> io::Result<String> {
-        let mut password = super::ZeroOnDrop::new();
+        let mut password = super::SafeString::new();
 
         let hidden_input = HiddenInput::new(handle)?;
 
         reader.read_line(&mut password)?;
-        super::fixes_newline(&mut password);
 
         // Newline for windows which otherwise prints on the same line.
         println!();
 
         std::mem::drop(hidden_input);
 
-        Ok(password.into_inner())
+        super::fix_new_line(password.into_inner())
     }
 }
 
 #[cfg(unix)]
-pub use unix::{read_password_from_stdin_lock, read_password_from_tty, stdin_tty};
+pub use unix::{read_password_from_stdin_lock, read_password_from_tty};
 #[cfg(windows)]
-pub use windows::{read_password_from_stdin_lock, read_password_from_tty, stdin_tty};
+pub use windows::{read_password_from_stdin_lock, read_password_from_tty};
 
 /// Reads a password from stdin
 pub fn read_password() -> ::std::io::Result<String> {
-    read_password_from_stdin_lock(&mut stdin().lock())
+    read_password_from_stdin_lock(&mut std::io::stdin().lock())
 }
 
 /// Reads a password from anything that implements BufRead
 pub fn read_password_from_bufread(source: &mut impl BufRead) -> ::std::io::Result<String> {
-    let mut password = ZeroOnDrop::new();
+    let mut password = SafeString::new();
     source.read_line(&mut password)?;
 
-    fixes_newline(&mut password);
-    Ok(password.into_inner())
+    rutil::fix_new_line::fix_new_line(password.into_inner())
 }
 
 #[cfg(test)]
