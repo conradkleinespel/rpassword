@@ -44,10 +44,15 @@ fn fixes_newline(password: &mut ZeroOnDrop) {
 #[cfg(unix)]
 mod unix {
     use libc::{c_int, isatty, tcsetattr, termios, ECHO, ECHONL, STDIN_FILENO, TCSANOW};
-    use read_password_from_bufread;
     use std::io::{self, BufRead, StdinLock, Write};
     use std::mem;
     use std::os::unix::io::AsRawFd;
+
+    /// Checks if the program is run via a TTY
+    #[cfg(unix)]
+    pub fn stdin_tty() -> bool {
+        unsafe { isatty(STDIN_FILENO) == 1 }
+    }
 
     struct HiddenInput {
         fd: i32,
@@ -109,12 +114,10 @@ mod unix {
 
     /// Reads a password from an existing StdinLock
     pub fn read_password_from_stdin_lock(reader: &mut StdinLock) -> ::std::io::Result<String> {
-        let input_is_tty = unsafe { isatty(STDIN_FILENO) } == 1;
-
-        if !input_is_tty {
-            read_password_from_bufread(reader)
-        } else {
+        if ::stdin_tty() {
             read_password_from_fd(reader, STDIN_FILENO)
+        } else {
+            ::read_password_from_bufread(reader)
         }
     }
 
@@ -135,7 +138,6 @@ mod unix {
 
 #[cfg(windows)]
 mod windows {
-    use read_password_from_bufread;
     use std::io::{self, BufReader, Cursor, Write};
     use std::io::{BufRead, Read, StdinLock};
     use std::os::windows::io::{AsRawHandle, FromRawHandle};
@@ -147,11 +149,21 @@ mod windows {
     use winapi::um::handleapi::INVALID_HANDLE_VALUE;
     use winapi::um::minwinbase::LPOVERLAPPED;
     use winapi::um::processenv::GetStdHandle;
-    use winapi::um::winbase::{FILE_TYPE_PIPE, STD_INPUT_HANDLE};
+    use winapi::um::winbase::{FILE_TYPE_CHAR, FILE_TYPE_PIPE, STD_INPUT_HANDLE};
     use winapi::um::wincon::{ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT};
     use winapi::um::winnt::{
         FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE, HANDLE, PVOID,
     };
+
+    /// Checks if the program is run via a TTY
+    pub fn stdin_tty() -> bool {
+        let handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+        if handle == INVALID_HANDLE_VALUE {
+            panic!("Invalid STDIN handle");
+        }
+
+        unsafe { GetFileType(handle) == FILE_TYPE_CHAR }
+    }
 
     struct HiddenInput {
         mode: u32,
@@ -216,7 +228,7 @@ mod windows {
         }
 
         if unsafe { GetFileType(handle) } == FILE_TYPE_PIPE {
-            read_password_from_bufread(reader)
+            ::read_password_from_bufread(reader)
         } else {
             read_password_from_handle(reader, handle)
         }
@@ -241,9 +253,9 @@ mod windows {
 }
 
 #[cfg(unix)]
-pub use unix::{read_password_from_stdin_lock, read_password_from_tty};
+pub use unix::{read_password_from_stdin_lock, read_password_from_tty, stdin_tty};
 #[cfg(windows)]
-pub use windows::{read_password_from_stdin_lock, read_password_from_tty};
+pub use windows::{read_password_from_stdin_lock, read_password_from_tty, stdin_tty};
 
 /// Reads a password from stdin
 pub fn read_password() -> ::std::io::Result<String> {

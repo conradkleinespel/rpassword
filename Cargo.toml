@@ -16,5 +16,6 @@ libc = "0.2"
 rprompt = { path = "../rprompt", version = "1.0" }
 
 [target.'cfg(windows)'.dependencies]
+libc = "0.2"
 winapi = { version = "0.3", features = ["std", "winnt", "fileapi", "processenv", "winbase", "handleapi", "consoleapi", "minwindef", "wincon"] }
 rprompt = { path = "../rprompt", version = "1.0" }
