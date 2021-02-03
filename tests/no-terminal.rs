@@ -3,12 +3,9 @@
 
 use std::io::Cursor;
 
-extern crate rpassword;
 use rpassword::read_password_from_bufread;
 
 #[cfg(unix)]
-extern crate libc;
-
 #[cfg(unix)]
 fn close_stdin() {
     unsafe {
@@ -17,8 +14,6 @@ fn close_stdin() {
 }
 
 #[cfg(windows)]
-extern crate winapi;
-
 #[cfg(windows)]
 fn close_stdin() {
     use winapi::um::handleapi::CloseHandle;
@@ -49,14 +44,14 @@ fn can_read_from_redirected_input_many_times() {
 
     let mut reader_crlf = mock_input_crlf();
 
-    let response = ::read_password_from_bufread(&mut reader_crlf).unwrap();
+    let response = crate::read_password_from_bufread(&mut reader_crlf).unwrap();
     assert_eq!(response, "A mocked response.");
-    let response = ::read_password_from_bufread(&mut reader_crlf).unwrap();
+    let response = crate::read_password_from_bufread(&mut reader_crlf).unwrap();
     assert_eq!(response, "Another mocked response.");
 
     let mut reader_lf = mock_input_lf();
-    let response = ::read_password_from_bufread(&mut reader_lf).unwrap();
+    let response = crate::read_password_from_bufread(&mut reader_lf).unwrap();
     assert_eq!(response, "A mocked response.");
-    let response = ::read_password_from_bufread(&mut reader_lf).unwrap();
+    let response = crate::read_password_from_bufread(&mut reader_lf).unwrap();
     assert_eq!(response, "Another mocked response.");
 }

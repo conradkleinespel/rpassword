@@ -31,14 +31,6 @@
 //! println!("Your password is {}", password);
 //! ```
 
-#[cfg(unix)]
-extern crate libc;
-
-#[cfg(windows)]
-extern crate winapi;
-
-extern crate rutil;
-
 use rutil::{fix_new_line, SafeString};
 use std::io::BufRead;
 
@@ -94,7 +86,7 @@ mod unix {
     }
 
     fn safe_tcgetattr(fd: c_int) -> ::std::io::Result<termios> {
-        let mut term = mem::MaybeUninit::<::unix::termios>::uninit();
+        let mut term = mem::MaybeUninit::<crate::unix::termios>::uninit();
         io_result(unsafe { ::libc::tcgetattr(fd, term.as_mut_ptr()) })?;
         Ok(unsafe { term.assume_init() })
     }
@@ -113,7 +105,7 @@ mod unix {
         if stdin_is_tty() {
             read_password_from_fd(reader, STDIN_FILENO)
         } else {
-            ::read_password_from_bufread(reader)
+            crate::read_password_from_bufread(reader)
         }
     }
 
@@ -210,7 +202,7 @@ mod windows {
         }
 
         if unsafe { GetFileType(handle) } == FILE_TYPE_PIPE {
-            ::read_password_from_bufread(reader)
+            crate::read_password_from_bufread(reader)
         } else {
             read_password_from_handle(reader, handle)
         }
@@ -234,7 +226,7 @@ mod windows {
 }
 
 #[cfg(unix)]
-pub use unix::{read_password_from_stdin_lock, read_password_from_tty};
+pub use crate::unix::{read_password_from_stdin_lock, read_password_from_tty};
 #[cfg(windows)]
 pub use windows::{read_password_from_stdin_lock, read_password_from_tty};
 
@@ -267,15 +259,15 @@ mod tests {
     fn can_read_from_redirected_input_many_times() {
         let mut reader_crlf = mock_input_crlf();
 
-        let response = ::read_password_from_bufread(&mut reader_crlf).unwrap();
+        let response = crate::read_password_from_bufread(&mut reader_crlf).unwrap();
         assert_eq!(response, "A mocked response.");
-        let response = ::read_password_from_bufread(&mut reader_crlf).unwrap();
+        let response = crate::read_password_from_bufread(&mut reader_crlf).unwrap();
         assert_eq!(response, "Another mocked response.");
 
         let mut reader_lf = mock_input_lf();
-        let response = ::read_password_from_bufread(&mut reader_lf).unwrap();
+        let response = crate::read_password_from_bufread(&mut reader_lf).unwrap();
         assert_eq!(response, "A mocked response.");
-        let response = ::read_password_from_bufread(&mut reader_lf).unwrap();
+        let response = crate::read_password_from_bufread(&mut reader_lf).unwrap();
         assert_eq!(response, "Another mocked response.");
     }
 }

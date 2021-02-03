@@ -1,5 +1,4 @@
 [package]
-
 name = "rpassword"
 version = "5.0.1"
 authors = ["Conrad Kleinespel <conradk@conradk.com>"]
@@ -10,6 +9,7 @@ repository = "https://github.com/conradkleinespel/rpassword"
 documentation = "https://docs.rs/rpassword/"
 readme = "README.md"
 keywords = ["read", "password", "security", "pass", "getpass"]
+edition = "2018"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
