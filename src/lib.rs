@@ -39,14 +39,13 @@ extern crate winapi;
 
 extern crate rutil;
 
-use rutil::fix_new_line::fix_new_line;
-use rutil::safe_string::SafeString;
+use rutil::{fix_new_line, SafeString};
 use std::io::BufRead;
 
 #[cfg(unix)]
 mod unix {
     use libc::{c_int, tcsetattr, termios, ECHO, ECHONL, STDIN_FILENO, TCSANOW};
-    use rutil::stdin_is_tty::stdin_is_tty;
+    use rutil::stdin_is_tty;
     use std::io::{self, BufRead, StdinLock};
     use std::mem;
     use std::os::unix::io::AsRawFd;
@@ -249,7 +248,7 @@ pub fn read_password_from_bufread(source: &mut impl BufRead) -> ::std::io::Resul
     let mut password = SafeString::new();
     source.read_line(&mut password)?;
 
-    rutil::fix_new_line::fix_new_line(password.into_inner())
+    fix_new_line(password.into_inner())
 }
 
 #[cfg(test)]
