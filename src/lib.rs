@@ -31,13 +31,15 @@
 //! println!("Your password is {}", password);
 //! ```
 
+mod rutil;
+
 use rutil::{fix_new_line, SafeString};
 use std::io::BufRead;
 
 #[cfg(unix)]
 mod unix {
+    use crate::rutil::stdin_is_tty;
     use libc::{c_int, tcsetattr, termios, ECHO, ECHONL, STDIN_FILENO, TCSANOW};
-    use rutil::stdin_is_tty;
     use std::io::{self, BufRead, StdinLock};
     use std::mem;
     use std::os::unix::io::AsRawFd;
