@@ -1,16 +1,35 @@
-// Copyright 2014-2017 The Rpassword Developers
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+//! This library makes it easy to read passwords in a console application on all platforms, Unix and
+//! Windows alike.
+//!
+//! Here's how you can read a password from stdin:
+//! ```no_run
+//! let password = rpassword::read_password().unwrap();
+//! println!("Your password is {}", password);
+//! ```
+//!
+//! If you need more control over the source of the input, you can use `read_password_from_stdin_lock`,
+//! which hides the input from the terminal, all the while using the StdinLock you pass it:
+//! ```no_run
+//! let stdin = std::io::stdin();
+//! let password = rpassword::read_password_from_stdin_lock(&mut stdin.lock()).unwrap();
+//! println!("Your password is {}", password);
+//! ```
+//!
+//! In more advanced scenarios, you'll want to read from the TTY instead of stdin:
+//! ```no_run
+//! let password = rpassword::read_password_from_tty().unwrap();
+//! println!("Your password is {}", password);
+//! ```
+//!
+//! Finally, in unit tests, you might want to pass a `Cursor`, which implements `BufRead`. In that
+//! case, you can use `read_password_from_bufread`:
+//! ```
+//! use std::io::Cursor;
+//!
+//! let mut mock_input = Cursor::new("my-password\n".as_bytes().to_owned());
+//! let password = rpassword::read_password_from_bufread(&mut mock_input).unwrap();
+//! println!("Your password is {}", password);
+//! ```
 
 #[cfg(unix)]
 extern crate libc;
