@@ -1,10 +1,8 @@
 use crate::SafeString;
 use serde::de::{Deserialize, Deserializer, Visitor};
 use serde::ser::{Serialize, Serializer};
-use std::convert::Into;
 use std::fmt;
-use std::ops::{Deref, DerefMut, Drop};
-use std::{ptr, sync::atomic};
+use std::ops::Deref;
 
 struct StringVisitor;
 
@@ -41,7 +39,6 @@ impl<'de> Deserialize<'de> for SafeString {
 mod test {
     use super::SafeString;
     use serde::{Deserialize, Serialize};
-    use serde_json;
 
     #[test]
     fn safe_string_serialization() {
