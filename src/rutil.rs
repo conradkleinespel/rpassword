@@ -1,7 +1,7 @@
 mod fix_new_line;
+mod print_tty;
 mod safe_string;
-mod stdin_is_tty;
 
 pub use fix_new_line::fix_new_line;
+pub use print_tty::{print_tty, print_writer};
 pub use safe_string::SafeString;
-pub use stdin_is_tty::stdin_is_tty;
