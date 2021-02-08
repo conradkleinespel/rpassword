@@ -28,9 +28,12 @@
 //! println!("Your password is {}", password);
 //! ```
 
+#[allow(unused)]
 mod rutil;
 
-use rutil::{fix_new_line, print_tty, print_writer, SafeString};
+use rutil::fix_new_line::fix_new_line;
+use rutil::print_tty::{print_tty, print_writer};
+use rutil::safe_string::SafeString;
 use std::io::{BufRead, Write};
 
 #[cfg(unix)]
