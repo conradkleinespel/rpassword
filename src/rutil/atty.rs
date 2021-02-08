@@ -13,11 +13,6 @@
 
 #![cfg_attr(unix, no_std)]
 
-#[cfg(unix)]
-extern crate libc;
-#[cfg(windows)]
-extern crate winapi;
-
 #[cfg(windows)]
 use winapi::shared::minwindef::DWORD;
 #[cfg(windows)]
@@ -34,8 +29,6 @@ pub enum Stream {
 /// returns true if this is a tty
 #[cfg(all(unix, not(target_arch = "wasm32")))]
 pub fn is(stream: Stream) -> bool {
-    extern crate libc;
-
     let fd = match stream {
         Stream::Stdout => libc::STDOUT_FILENO,
         Stream::Stderr => libc::STDERR_FILENO,
@@ -47,8 +40,6 @@ pub fn is(stream: Stream) -> bool {
 /// returns true if this is a tty
 #[cfg(target_os = "hermit")]
 pub fn is(stream: Stream) -> bool {
-    extern crate hermit_abi;
-
     let fd = match stream {
         Stream::Stdout => hermit_abi::STDOUT_FILENO,
         Stream::Stderr => hermit_abi::STDERR_FILENO,

@@ -1,4 +1,4 @@
-use crate::SafeString;
+use super::safe_string::SafeString;
 use serde::de::{Deserialize, Deserializer, Visitor};
 use serde::ser::{Serialize, Serializer};
 use std::fmt;
