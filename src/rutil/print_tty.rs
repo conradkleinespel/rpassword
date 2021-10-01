@@ -1,3 +1,17 @@
+#[cfg(target_arch = "wasm32")]
+mod wasm {
+    use std::io::Write;
+
+    /// Displays a message on the STDOUT
+    pub fn print_tty(prompt: impl ToString) -> std::io::Result<()> {
+        let mut stdout = std::io::stdout();
+        write!(stdout, "{}", prompt.to_string().as_str())?;
+        stdout.flush()?;
+        Ok(())
+    }
+}
+
+
 #[cfg(unix)]
 mod unix {
     use std::io::Write;
@@ -56,3 +70,5 @@ use std::io::Write;
 pub use unix::print_tty;
 #[cfg(windows)]
 pub use windows::print_tty;
+#[cfg(target_arch = "wasm32")]
+pub use wasm::print_tty;
