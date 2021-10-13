@@ -1,5 +1,5 @@
 [package]
-name = "rpassword"
+name = "rpassword-wasi"
 version = "5.0.1"
 authors = ["Conrad Kleinespel <conradk@conradk.com>"]
 description = "Read passwords in console applications."

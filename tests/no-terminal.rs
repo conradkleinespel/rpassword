@@ -3,7 +3,7 @@
 
 use std::io::Cursor;
 
-use rpassword::read_password_from_bufread;
+use rpassword_wasi::read_password_from_bufread;
 
 #[cfg(unix)]
 #[cfg(unix)]
