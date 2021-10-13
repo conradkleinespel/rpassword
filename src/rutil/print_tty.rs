@@ -1,4 +1,4 @@
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 mod wasm {
     use std::io::Write;
 
@@ -12,7 +12,7 @@ mod wasm {
 }
 
 
-#[cfg(unix)]
+#[cfg(target_family = "unix")]
 mod unix {
     use std::io::Write;
 
@@ -25,7 +25,7 @@ mod unix {
     }
 }
 
-#[cfg(windows)]
+#[cfg(target_family = "windows")]
 mod windows {
     use std::io::Write;
     use std::os::windows::io::FromRawHandle;
@@ -66,9 +66,9 @@ pub fn print_writer(stream: &mut impl Write, prompt: impl ToString) -> std::io::
 }
 
 use std::io::Write;
-#[cfg(unix)]
+#[cfg(target_family = "unix")]
 pub use unix::print_tty;
-#[cfg(windows)]
+#[cfg(target_family = "windows")]
 pub use windows::print_tty;
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 pub use wasm::print_tty;

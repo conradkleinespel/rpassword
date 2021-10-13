@@ -3,7 +3,7 @@ use crate::rutil::print_tty::{print_tty, print_writer};
 use crate::rutil::safe_string::SafeString;
 use std::io::{BufRead, Write};
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 mod wasm {
     use std::io::{self, BufRead};
 
@@ -26,7 +26,7 @@ mod wasm {
     }
 }
 
-#[cfg(unix)]
+#[cfg(target_family = "unix")]
 mod unix {
     use libc::{c_int, tcsetattr, termios, ECHO, ECHONL, TCSANOW};
     use std::io::{self, BufRead};
@@ -108,7 +108,7 @@ mod unix {
     }
 }
 
-#[cfg(windows)]
+#[cfg(target_family = "windows")]
 mod windows {
     use std::io::{self, BufReader};
     use std::io::{BufRead, StdinLock};
@@ -199,11 +199,11 @@ mod windows {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 pub use wasm::read_password;
-#[cfg(unix)]
+#[cfg(target_family = "unix")]
 pub use unix::read_password;
-#[cfg(windows)]
+#[cfg(target_family = "windows")]
 pub use windows::read_password;
 
 /// Reads a password from anything that implements BufRead
