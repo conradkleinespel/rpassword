@@ -1,39 +1,32 @@
-//! This library makes it easy to read passwords in a console application on all platforms, Unix and
-//! Windows alike.
-//!
-//! Here's how you can read a password:
-//! ```no_run
-//! let password = rpassword::read_password().unwrap();
-//! println!("Your password is {}", password);
-//! ```
-//!
-//! You can also prompt for a password:
-//! ```no_run
-//! let password = rpassword::prompt_password("Your password: ").unwrap();
-//! println!("Your password is {}", password);
-//! ```
-//!
-//! Finally, in unit tests, you might want to pass a `Cursor`, which implements `BufRead`. In that
-//! case, you can use `read_password_from_bufread` and `prompt_password_from_bufread`:
-//! ```
-//! use std::io::Cursor;
-//!
-//! let mut mock_input = Cursor::new("my-password\n".as_bytes().to_owned());
-//! let password = rpassword::read_password_from_bufread(&mut mock_input).unwrap();
-//! println!("Your password is {}", password);
-//!
-//! let mut mock_input = Cursor::new("my-password\n".as_bytes().to_owned());
-//! let mut mock_output = Cursor::new(Vec::new());
-//! let password = rpassword::prompt_password_from_bufread(&mut mock_input, &mut mock_output, "Your password: ").unwrap();
-//! println!("Your password is {}", password);
-//! ```
-
 use crate::rutil::fix_new_line::fix_new_line;
 use crate::rutil::print_tty::{print_tty, print_writer};
 use crate::rutil::safe_string::SafeString;
 use std::io::{BufRead, Write};
 
-#[cfg(unix)]
+#[cfg(target_family = "wasm")]
+mod wasm {
+    use std::io::{self, BufRead};
+
+    /// Reads a password from the TTY
+    pub fn read_password() -> std::io::Result<String> {
+        let tty = std::fs::File::open("/dev/tty")?;
+        let mut reader = io::BufReader::new(tty);
+
+        read_password_from_fd_with_hidden_input(&mut reader)
+    }
+
+    /// Reads a password from a given file descriptor
+    fn read_password_from_fd_with_hidden_input(
+        reader: &mut impl BufRead,
+    ) -> std::io::Result<String> {
+        let mut password = super::SafeString::new();
+
+        reader.read_line(&mut password)?;
+        super::fix_new_line(password.into_inner())
+    }
+}
+
+#[cfg(target_family = "unix")]
 mod unix {
     use libc::{c_int, tcsetattr, termios, ECHO, ECHONL, TCSANOW};
     use std::io::{self, BufRead};
@@ -115,7 +108,7 @@ mod unix {
     }
 }
 
-#[cfg(windows)]
+#[cfg(target_family = "windows")]
 mod windows {
     use std::io::{self, BufReader};
     use std::io::{BufRead, StdinLock};
@@ -206,9 +199,11 @@ mod windows {
     }
 }
 
-#[cfg(unix)]
+#[cfg(target_family = "wasm")]
+pub use wasm::read_password;
+#[cfg(target_family = "unix")]
 pub use unix::read_password;
-#[cfg(windows)]
+#[cfg(target_family = "windows")]
 pub use windows::read_password;
 
 /// Reads a password from anything that implements BufRead

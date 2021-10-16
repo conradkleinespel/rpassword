@@ -1,4 +1,18 @@
-#[cfg(unix)]
+#[cfg(target_family = "wasm")]
+mod wasm {
+    use std::io::Write;
+
+    /// Displays a message on the STDOUT
+    pub fn print_tty(prompt: impl ToString) -> std::io::Result<()> {
+        let mut stdout = std::io::stdout();
+        write!(stdout, "{}", prompt.to_string().as_str())?;
+        stdout.flush()?;
+        Ok(())
+    }
+}
+
+
+#[cfg(target_family = "unix")]
 mod unix {
     use std::io::Write;
 
@@ -11,7 +25,7 @@ mod unix {
     }
 }
 
-#[cfg(windows)]
+#[cfg(target_family = "windows")]
 mod windows {
     use std::io::Write;
     use std::os::windows::io::FromRawHandle;
@@ -52,7 +66,9 @@ pub fn print_writer(stream: &mut impl Write, prompt: impl ToString) -> std::io::
 }
 
 use std::io::Write;
-#[cfg(unix)]
+#[cfg(target_family = "unix")]
 pub use unix::print_tty;
-#[cfg(windows)]
+#[cfg(target_family = "windows")]
 pub use windows::print_tty;
+#[cfg(target_family = "wasm")]
+pub use wasm::print_tty;
