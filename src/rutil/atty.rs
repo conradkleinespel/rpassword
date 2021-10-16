@@ -27,7 +27,7 @@ pub enum Stream {
 }
 
 /// returns true if this is a tty
-#[cfg(all(unix, not(target_arch = "wasm32")))]
+#[cfg(target_family = "unix")]
 pub fn is(stream: Stream) -> bool {
     let fd = match stream {
         Stream::Stdout => libc::STDOUT_FILENO,
@@ -141,7 +141,7 @@ unsafe fn msys_tty_on(fd: DWORD) -> bool {
 }
 
 /// returns true if this is a tty
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_family = "wasm")]
 pub fn is(_stream: Stream) -> bool {
     false
 }
