@@ -1,6 +1,6 @@
 [package]
 name = "rpassword-wasi"
-version = "5.0.1"
+version = "5.0.3"
 authors = ["Conrad Kleinespel <conradk@conradk.com>"]
 description = "Read passwords in console applications."
 license = "Apache-2.0"

@@ -3,8 +3,8 @@ use crate::rutil::print_tty::{print_tty, print_writer};
 use crate::rutil::safe_string::SafeString;
 use std::io::{BufRead, Write};
 
-#[cfg(target_family = "wasm")]
-mod wasm {
+#[cfg(target_os = "wasi")]
+mod wasi {
     use std::io::{self, BufRead};
 
     /// Reads a password from the TTY
@@ -199,8 +199,8 @@ mod windows {
     }
 }
 
-#[cfg(target_family = "wasm")]
-pub use wasm::read_password;
+#[cfg(target_os = "wasi")]
+pub use wasi::read_password;
 #[cfg(target_family = "unix")]
 pub use unix::read_password;
 #[cfg(target_family = "windows")]
@@ -226,7 +226,11 @@ pub fn prompt_password_from_bufread(
 
 /// Prompts on the TTY and then reads a password from stdin
 pub fn prompt_password(prompt: impl ToString) -> std::io::Result<String> {
-    print_tty(prompt.to_string().as_str()).and_then(|_| read_password())
+    let ret = print_tty(prompt.to_string().as_str())
+        .and_then(|_| read_password());
+    #[cfg(target_os = "wasi")]
+    let _ = print_tty("\n");
+    ret
 }
 
 #[cfg(test)]

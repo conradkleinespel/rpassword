@@ -141,7 +141,7 @@ unsafe fn msys_tty_on(fd: DWORD) -> bool {
 }
 
 /// returns true if this is a tty
-#[cfg(target_family = "wasm")]
+#[cfg(target_os = "wasi")]
 pub fn is(_stream: Stream) -> bool {
     false
 }

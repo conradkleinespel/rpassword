@@ -1,13 +1,13 @@
-#[cfg(target_family = "wasm")]
-mod wasm {
+#[cfg(target_os = "wasi")]
+mod wasi {
     use std::io::Write;
 
     /// Displays a message on the STDOUT
     pub fn print_tty(prompt: impl ToString) -> std::io::Result<()> {
-        let mut stdout = std::io::stdout();
-        write!(stdout, "{}", prompt.to_string().as_str())?;
-        stdout.flush()?;
-        Ok(())
+        let mut stream = std::fs::OpenOptions::new().write(true).open("/dev/tty")?;
+        stream
+            .write_all(prompt.to_string().as_str().as_bytes())
+            .and_then(|_| stream.flush())
     }
 }
 
@@ -70,5 +70,5 @@ use std::io::Write;
 pub use unix::print_tty;
 #[cfg(target_family = "windows")]
 pub use windows::print_tty;
-#[cfg(target_family = "wasm")]
-pub use wasm::print_tty;
+#[cfg(target_os = "wasi")]
+pub use wasi::print_tty;
