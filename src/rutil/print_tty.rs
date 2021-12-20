@@ -11,7 +11,6 @@ mod wasm {
     }
 }
 
-
 #[cfg(target_family = "unix")]
 mod unix {
     use std::io::Write;
@@ -68,7 +67,7 @@ pub fn print_writer(stream: &mut impl Write, prompt: impl ToString) -> std::io::
 use std::io::Write;
 #[cfg(target_family = "unix")]
 pub use unix::print_tty;
-#[cfg(target_family = "windows")]
-pub use windows::print_tty;
 #[cfg(target_family = "wasm")]
 pub use wasm::print_tty;
+#[cfg(target_family = "windows")]
+pub use windows::print_tty;
