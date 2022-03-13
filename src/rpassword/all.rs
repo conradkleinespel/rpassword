@@ -199,10 +199,10 @@ mod windows {
     }
 }
 
-#[cfg(target_family = "wasm")]
-pub use wasm::read_password;
 #[cfg(target_family = "unix")]
 pub use unix::read_password;
+#[cfg(target_family = "wasm")]
+pub use wasm::read_password;
 #[cfg(target_family = "windows")]
 pub use windows::read_password;
 
