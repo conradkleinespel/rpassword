@@ -1,5 +1,5 @@
-//! This library makes it easy to read passwords in a console application on all platforms, Unix and
-//! Windows alike.
+//! This library makes it easy to read passwords in a console application on all platforms, Unix,
+//! Windows, WASM, etc.
 //!
 //! Here's how you can read a password:
 //! ```no_run

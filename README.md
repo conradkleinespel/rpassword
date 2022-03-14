@@ -1,6 +1,6 @@
 # Rustastic Password
 
-`rpassword` makes it easy to read passwords in a console application on all platforms, Unix and Windows alike.
+`rpassword` makes it easy to read passwords in a console application on all platforms, Unix, Windows, WASM, etc.
 
 `rpassword` is made available free of charge. You can support its development through [Liberapay](https://liberapay.com/conradkleinespel/) 💪
 
@@ -10,7 +10,7 @@ Add `rpassword` as a dependency in Cargo.toml:
 
 ```toml
 [dependencies]
-rpassword = "5.0"
+rpassword = "6.0"
 ```
 
 See examples and docs at [https://docs.rs/rpassword](https://docs.rs/rpassword).
@@ -30,6 +30,7 @@ Here's a list of existing `rpassword` contributors:
 * [@equalsraf](https://github.com/equalsraf)
 * [@Heliozoa](https://github.com/Heliozoa)
 * [@JanLikar](https://github.com/JanLikar)
+* [@john-sharratt](https://github.com/john-sharratt)
 * [@joshuef](https://github.com/joshuef)
 * [@longshorej](https://github.com/longshorej)
 * [@nicokoch](https://github.com/nicokoch)

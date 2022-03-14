@@ -224,7 +224,7 @@ pub fn prompt_password_from_bufread(
         .and_then(|_| read_password_from_bufread(reader))
 }
 
-/// Prompts on the TTY and then reads a password from stdin
+/// Prompts on the TTY and then reads a password from TTY
 pub fn prompt_password(prompt: impl ToString) -> std::io::Result<String> {
     print_tty(prompt.to_string().as_str()).and_then(|_| read_password())
 }
