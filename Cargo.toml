@@ -11,6 +11,11 @@ readme = "README.md"
 keywords = ["read", "password", "security", "pass", "getpass"]
 edition = "2018"
 
+[features]
+# Do not use this. Exists only to workaround the `duck` monorepo's structure.
+# It is not covered by any semver versioning.
+__serde = []
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
@@ -18,5 +23,3 @@ libc = "0.2"
 winapi = { version = "0.3", features = ["std", "winnt", "fileapi", "processenv", "winbase", "handleapi", "consoleapi", "minwindef", "wincon"] }
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
