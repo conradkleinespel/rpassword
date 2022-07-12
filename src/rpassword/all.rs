@@ -188,10 +188,14 @@ mod windows {
 
         let hidden_input = HiddenInput::new(handle)?;
 
-        reader.read_line(&mut password)?;
+        let reader_return = reader.read_line(&mut password);
 
         // Newline for windows which otherwise prints on the same line.
         println!();
+
+        if reader_return.is_err() {
+            return Err(reader_return.unwrap_err());
+        }
 
         std::mem::drop(hidden_input);
 
