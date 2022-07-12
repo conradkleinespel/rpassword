@@ -10,7 +10,7 @@ Add `rpassword` as a dependency in Cargo.toml:
 
 ```toml
 [dependencies]
-rpassword = "6.0"
+rpassword = "7.0"
 ```
 
 See examples and docs at [https://docs.rs/rpassword](https://docs.rs/rpassword).
@@ -21,6 +21,7 @@ We welcome contribution from everyone. Feel free to open an issue or a pull requ
 
 Here's a list of existing `rpassword` contributors:
 
+* [@BlackHoleFox](https://github.com/BlackHoleFox)
 * [@C4K3](https://github.com/C4K3)
 * [@conradkleinespel](https://github.com/conradkleinespel)
 * [@DaveLancaster](https://github.com/DaveLancaster)
@@ -34,6 +35,7 @@ Here's a list of existing `rpassword` contributors:
 * [@joshuef](https://github.com/joshuef)
 * [@longshorej](https://github.com/longshorej)
 * [@nicokoch](https://github.com/nicokoch)
+* [@NovaliX-Dev](https://github.com/NovaliX-Dev)
 * [@petevine](https://github.com/petevine)
 * [@psych0d0g](https://github.com/psych0d0g)
 * [@retep998](https://github.com/retep998)
