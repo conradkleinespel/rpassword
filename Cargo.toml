@@ -8,6 +8,7 @@ homepage = "https://github.com/conradkleinespel/rpassword"
 repository = "https://github.com/conradkleinespel/rpassword"
 documentation = "https://docs.rs/rpassword/"
 readme = "README.md"
+rust-version = "1.60"
 keywords = ["read", "password", "security", "pass", "getpass"]
 edition = "2018"
 

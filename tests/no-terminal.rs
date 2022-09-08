@@ -38,6 +38,10 @@ fn mock_input_lf() -> Cursor<&'static [u8]> {
     Cursor::new(&b"A mocked response.\nAnother mocked response.\n"[..])
 }
 
+fn mock_input_ctrl_u() ->  Cursor<&'static [u8]> {
+    Cursor::new(&b"A mocked response.Another mocked response.\n"[..])
+}
+
 #[test]
 fn can_read_from_redirected_input_many_times() {
     close_stdin();
@@ -53,5 +57,14 @@ fn can_read_from_redirected_input_many_times() {
     let response = crate::read_password_from_bufread(&mut reader_lf).unwrap();
     assert_eq!(response, "A mocked response.");
     let response = crate::read_password_from_bufread(&mut reader_lf).unwrap();
+    assert_eq!(response, "Another mocked response.");
+}
+
+#[test]
+fn can_read_from_input_ctrl_u() {
+    close_stdin();
+
+    let mut reader_ctrl_u = crate::mock_input_ctrl_u();
+    let response = crate::read_password_from_bufread(&mut reader_ctrl_u).unwrap();
     assert_eq!(response, "Another mocked response.");
 }
