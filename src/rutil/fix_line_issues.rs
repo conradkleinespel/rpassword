@@ -15,8 +15,8 @@ pub fn fix_line_issues(mut line: String) -> std::io::Result<String> {
         line.pop();
     }
 
-    if line.contains("") {
-        let vec: Vec<&str> = line.split("").collect();
+    if line.contains('') {
+        let vec: Vec<&str> = line.split('').collect();
         line = match vec.last() {
             None => String::new(),
             Some(i) => i.to_string()

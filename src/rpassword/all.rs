@@ -22,7 +22,7 @@ mod wasm {
         let mut password = super::SafeString::new();
 
         reader.read_line(&mut password)?;
-        super::fix_new_line(password.into_inner())
+        super::fix_line_issues(password.into_inner())
     }
 }
 
@@ -104,7 +104,7 @@ mod unix {
 
         std::mem::drop(hidden_input);
 
-        super::fix_new_line(password.into_inner())
+        super::fix_line_issues(password.into_inner())
     }
 }
 
