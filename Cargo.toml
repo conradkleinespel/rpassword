@@ -1,6 +1,6 @@
 [package]
 name = "rpassword"
-version = "7.0.0"
+version = "7.1.0"
 authors = ["Conrad Kleinespel <conradk@conradk.com>"]
 description = "Read passwords in console applications."
 license = "Apache-2.0"
@@ -10,6 +10,7 @@ documentation = "https://docs.rs/rpassword/"
 readme = "README.md"
 keywords = ["read", "password", "security", "pass", "getpass"]
 edition = "2018"
+rust-version = "1.60"
 
 [features]
 serde = ["dep:serde", "dep:serde_json"]

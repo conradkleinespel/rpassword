@@ -55,3 +55,16 @@ fn can_read_from_redirected_input_many_times() {
     let response = crate::read_password_from_bufread(&mut reader_lf).unwrap();
     assert_eq!(response, "Another mocked response.");
 }
+
+#[test]
+fn can_read_from_input_ctrl_u() {
+    close_stdin();
+
+    let mut reader_ctrl_u = Cursor::new(&b"A mocked response.Another mocked response.\n"[..]);
+    let response = crate::read_password_from_bufread(&mut reader_ctrl_u).unwrap();
+    assert_eq!(response, "Another mocked response.");
+
+    let mut reader_ctrl_u_at_end = Cursor::new(&b"A mocked response.\n"[..]);
+    let response = crate::read_password_from_bufread(&mut reader_ctrl_u_at_end).unwrap();
+    assert_eq!(response, "");
+}
