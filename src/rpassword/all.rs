@@ -1,4 +1,4 @@
-use crate::rutil::fix_new_line::fix_new_line;
+use crate::rutil::fix_line_issues::fix_line_issues;
 use crate::rutil::print_tty::{print_tty, print_writer};
 use crate::rutil::safe_string::SafeString;
 use std::io::{BufRead, Write};
@@ -22,7 +22,7 @@ mod wasm {
         let mut password = super::SafeString::new();
 
         reader.read_line(&mut password)?;
-        super::fix_new_line(password.into_inner())
+        super::fix_line_issues(password.into_inner())
     }
 }
 
@@ -104,7 +104,7 @@ mod unix {
 
         std::mem::drop(hidden_input);
 
-        super::fix_new_line(password.into_inner())
+        super::fix_line_issues(password.into_inner())
     }
 }
 
@@ -199,7 +199,7 @@ mod windows {
 
         std::mem::drop(hidden_input);
 
-        super::fix_new_line(password.into_inner())
+        super::fix_line_issues(password.into_inner())
     }
 }
 
@@ -215,7 +215,7 @@ pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<
     let mut password = SafeString::new();
     reader.read_line(&mut password)?;
 
-    fix_new_line(password.into_inner())
+    fix_line_issues(password.into_inner())
 }
 
 /// Prompts on the TTY and then reads a password from anything that implements BufRead

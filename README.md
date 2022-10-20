@@ -34,6 +34,7 @@ Here's a list of existing `rpassword` contributors:
 * [@john-sharratt](https://github.com/john-sharratt)
 * [@joshuef](https://github.com/joshuef)
 * [@longshorej](https://github.com/longshorej)
+* [@LSchallot](https://github.com/LSchallot)
 * [@nicokoch](https://github.com/nicokoch)
 * [@NovaliX-Dev](https://github.com/NovaliX-Dev)
 * [@petevine](https://github.com/petevine)
