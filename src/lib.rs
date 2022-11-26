@@ -141,14 +141,12 @@ mod unix {
 #[cfg(target_family = "windows")]
 mod windows {
     use std::io::{self, BufReader};
-    use std::io::{BufRead, StdinLock};
+    use std::io::BufRead;
     use std::os::windows::io::FromRawHandle;
     use winapi::shared::minwindef::LPDWORD;
     use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
-    use winapi::um::fileapi::{CreateFileA, GetFileType, OPEN_EXISTING};
+    use winapi::um::fileapi::{CreateFileA, OPEN_EXISTING};
     use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-    use winapi::um::processenv::GetStdHandle;
-    use winapi::um::winbase::{FILE_TYPE_PIPE, STD_INPUT_HANDLE};
     use winapi::um::wincon::{ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT};
     use winapi::um::winnt::{
         FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE, HANDLE,
