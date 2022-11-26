@@ -19,4 +19,4 @@ libc = "0.2"
 winapi = { version = "0.3", features = ["std", "winnt", "fileapi", "processenv", "winbase", "handleapi", "consoleapi", "minwindef", "wincon"] }
 
 [dependencies]
-rtoolbox = { path = "../rtoolbox" }
+rtoolbox = { path = "../rtoolbox", version = "0.0" }
