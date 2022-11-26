@@ -10,7 +10,7 @@ Add `rpassword` as a dependency in Cargo.toml:
 
 ```toml
 [dependencies]
-rpassword = "7.0"
+rpassword = "7.2"
 ```
 
 See examples and docs at [https://docs.rs/rpassword](https://docs.rs/rpassword).
