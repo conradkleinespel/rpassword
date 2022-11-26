@@ -1,6 +1,6 @@
-use crate::rutil::fix_line_issues::fix_line_issues;
-use crate::rutil::print_tty::{print_tty, print_writer};
-use crate::rutil::safe_string::SafeString;
+use rutil::rutil::fix_line_issues::fix_line_issues;
+use rutil::rutil::print_tty::{print_tty, print_writer};
+use rutil::rutil::safe_string::SafeString;
 use std::io::{BufRead, Write};
 
 #[cfg(target_family = "wasm")]
