@@ -140,17 +140,18 @@ mod unix {
 
 #[cfg(target_family = "windows")]
 mod windows {
-    use std::io::{self, BufReader};
     use std::io::BufRead;
+    use std::io::{self, BufReader};
     use std::os::windows::io::FromRawHandle;
-    use winapi::shared::minwindef::LPDWORD;
-    use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
-    use winapi::um::fileapi::{CreateFileA, OPEN_EXISTING};
-    use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-    use winapi::um::wincon::{ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT};
-    use winapi::um::winnt::{
-        FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE, HANDLE,
+    use windows_sys::core::PCSTR;
+    use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileA, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
+    use windows_sys::Win32::System::Console::{
+        GetConsoleMode, SetConsoleMode, CONSOLE_MODE, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT,
+    };
+    use windows_sys::Win32::System::SystemServices::{GENERIC_READ, GENERIC_WRITE};
 
     struct HiddenInput {
         mode: u32,
@@ -162,7 +163,7 @@ mod windows {
             let mut mode = 0;
 
             // Get the old mode so we can reset back to it when we are done
-            if unsafe { GetConsoleMode(handle, &mut mode as LPDWORD) } == 0 {
+            if unsafe { GetConsoleMode(handle, &mut mode as *mut CONSOLE_MODE) } == 0 {
                 return Err(std::io::Error::last_os_error());
             }
 
@@ -189,13 +190,13 @@ mod windows {
     pub fn read_password() -> std::io::Result<String> {
         let handle = unsafe {
             CreateFileA(
-                b"CONIN$\x00".as_ptr() as *const i8,
+                b"CONIN$\x00".as_ptr() as PCSTR,
                 GENERIC_READ | GENERIC_WRITE,
                 FILE_SHARE_READ | FILE_SHARE_WRITE,
-                std::ptr::null_mut(),
+                std::ptr::null(),
                 OPEN_EXISTING,
                 0,
-                std::ptr::null_mut(),
+                INVALID_HANDLE_VALUE,
             )
         };
 
@@ -203,7 +204,7 @@ mod windows {
             return Err(std::io::Error::last_os_error());
         }
 
-        let mut stream = BufReader::new(unsafe { std::fs::File::from_raw_handle(handle) });
+        let mut stream = BufReader::new(unsafe { std::fs::File::from_raw_handle(handle as _) });
         read_password_from_handle_with_hidden_input(&mut stream, handle)
     }
 

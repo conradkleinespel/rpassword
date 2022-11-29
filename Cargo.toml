@@ -16,7 +16,7 @@ rust-version = "1.60"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["std", "winnt", "fileapi", "processenv", "winbase", "handleapi", "consoleapi", "minwindef", "wincon"] }
+windows-sys = { version = "0.42.0", features = ["Win32_Foundation", "Win32_System_Console", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_SystemServices"] }
 
 [dependencies]
 rtoolbox = { path = "../rtoolbox", version = "0.0" }
