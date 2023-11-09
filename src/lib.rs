@@ -144,14 +144,13 @@ mod windows {
     use std::io::{self, BufReader};
     use std::os::windows::io::FromRawHandle;
     use windows_sys::core::PCSTR;
-    use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::Storage::FileSystem::{
         CreateFileA, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
     use windows_sys::Win32::System::Console::{
         GetConsoleMode, SetConsoleMode, CONSOLE_MODE, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT,
     };
-    use windows_sys::Win32::System::SystemServices::{GENERIC_READ, GENERIC_WRITE};
 
     struct HiddenInput {
         mode: u32,
