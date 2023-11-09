@@ -6,7 +6,6 @@ use std::io::Cursor;
 use rpassword::read_password_from_bufread;
 
 #[cfg(unix)]
-#[cfg(unix)]
 fn close_stdin() {
     unsafe {
         libc::close(libc::STDIN_FILENO);
@@ -14,11 +13,9 @@ fn close_stdin() {
 }
 
 #[cfg(windows)]
-#[cfg(windows)]
 fn close_stdin() {
-    use winapi::um::handleapi::CloseHandle;
-    use winapi::um::processenv::GetStdHandle;
-    use winapi::um::winbase::STD_INPUT_HANDLE;
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Console::{GetStdHandle, STD_INPUT_HANDLE};
 
     unsafe {
         CloseHandle(GetStdHandle(STD_INPUT_HANDLE));
