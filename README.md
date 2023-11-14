@@ -1,6 +1,9 @@
 # Rustastic Password
 
-`rpassword` makes it easy to read passwords in a console application on all platforms, Unix, Windows, WASM, etc.
+`rpassword` makes it easy to read passwords from Rust code in console applications on all platforms, Unix, Windows, WASM and more.
+It's similar to Linux's C function `getpass()` or Python's `getpass` module.
+
+![rpassword logo and headline](rpassword.png)
 
 `rpassword` is made available free of charge. You can support its development through [Liberapay](https://liberapay.com/conradkleinespel/) 💪
 
