@@ -238,7 +238,7 @@ pub use wasm::read_password;
 #[cfg(target_family = "windows")]
 pub use windows::read_password;
 
-/// Reads a password from anything that implements BufRead
+/// Reads a password from `impl BufRead`
 pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<String> {
     let mut password = SafeString::new();
     reader.read_line(&mut password)?;
@@ -246,7 +246,7 @@ pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<
     fix_line_issues(password.into_inner())
 }
 
-/// Prompts on the TTY and then reads a password from anything that implements BufRead
+/// Prompts on `impl Write` and then reads a password from `impl BufRead`
 pub fn prompt_password_from_bufread(
     reader: &mut impl BufRead,
     writer: &mut impl Write,
