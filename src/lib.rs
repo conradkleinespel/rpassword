@@ -258,6 +258,13 @@ pub fn prompt_password_from_bufread(
 
 /// Prompts on the TTY and then reads a password from TTY
 pub fn prompt_password(prompt: impl ToString) -> std::io::Result<String> {
+    #[cfg(target_family = "windows")]
+    {
+        use windows_sys::Win32::System::Console::SetConsoleOutputCP;
+        unsafe {
+            SetConsoleOutputCP(65001); // 65001 is UTF-8
+        };
+    }
     print_tty(prompt.to_string().as_str()).and_then(|_| read_password())
 }
 
