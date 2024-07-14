@@ -19,4 +19,4 @@ libc = "0.2"
 windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Console", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_SystemServices"] }
 
 [dependencies]
-rtoolbox = { path = "../rtoolbox", version = "0.0" }
+rtoolbox = "0.0.2"
