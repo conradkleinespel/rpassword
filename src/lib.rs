@@ -27,6 +27,11 @@
 //! let password = rpassword::prompt_password_from_bufread(&mut mock_input, &mut mock_output, "Your password: ").unwrap();
 //! println!("Your password is {}", password);
 //! ```
+//!
+//! # SECURITY WARNING
+//! This crate does not (currently) guarantee memory zeroing of passwords.
+//! Consumers of this crate should be aware that passwords read using this crate *may* be recoverable from memory dumps or cold boot attacks.
+//! Zeroing the memory of the returned `String` is not sufficient because internal buffers are not zeroed.
 
 use rtoolbox::fix_line_issues::fix_line_issues;
 use rtoolbox::print_tty::{print_tty, print_writer};
