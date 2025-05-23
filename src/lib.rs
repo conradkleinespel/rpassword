@@ -91,7 +91,7 @@ mod unix {
 
     impl Drop for HiddenInput {
         fn drop(&mut self) {
-            // Set the the mode back to normal
+            // Set the mode back to normal
             unsafe {
                 tcsetattr(self.fd, TCSANOW, &self.term_orig);
             }
@@ -178,7 +178,7 @@ mod windows {
 
     impl Drop for HiddenInput {
         fn drop(&mut self) {
-            // Set the the mode back to normal
+            // Set the mode back to normal
             unsafe {
                 SetConsoleMode(self.handle, self.mode);
             }
