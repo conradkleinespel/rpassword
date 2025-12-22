@@ -58,8 +58,9 @@ mod wasm {
 
 #[cfg(target_family = "unix")]
 mod unix {
-    use libc::{c_int, tcsetattr, termios, ECHO, ECHONL, TCSANOW};
-    use std::io::{self, BufRead};
+    use libc::{c_int, tcsetattr, termios, ECHO, TCSANOW};
+    use std::fs::File;
+    use std::io::{self, BufRead, Write};
     use std::mem;
     use std::os::unix::io::AsRawFd;
 
@@ -78,9 +79,6 @@ mod unix {
 
             // Hide the password. This is what makes this function useful.
             term.c_lflag &= !ECHO;
-
-            // But don't hide the NL character when the user hits ENTER.
-            term.c_lflag |= ECHONL;
 
             // Save the settings for now.
             io_result(unsafe { tcsetattr(fd, TCSANOW, &term) })?;
@@ -114,23 +112,24 @@ mod unix {
 
     /// Reads a password from the TTY
     pub fn read_password() -> std::io::Result<String> {
-        let tty = std::fs::File::open("/dev/tty")?;
+        let tty = File::options().read(true).append(true).open("/dev/tty")?;
         let fd = tty.as_raw_fd();
-        let mut reader = io::BufReader::new(tty);
 
-        read_password_from_fd_with_hidden_input(&mut reader, fd)
+        read_password_from_fd_with_hidden_input(tty, fd)
     }
 
     /// Reads a password from a given file descriptor
-    fn read_password_from_fd_with_hidden_input(
-        reader: &mut impl BufRead,
-        fd: i32,
-    ) -> std::io::Result<String> {
+    fn read_password_from_fd_with_hidden_input(file: File, fd: i32) -> std::io::Result<String> {
         let mut password = super::SafeString::new();
 
         let hidden_input = HiddenInput::new(fd)?;
 
+        let mut reader = io::BufReader::new(file);
         reader.read_line(&mut password)?;
+
+        // Write the newline that was not echoed.
+        let mut file = reader.into_inner();
+        file.write_all(b"\n")?;
 
         std::mem::drop(hidden_input);
 
