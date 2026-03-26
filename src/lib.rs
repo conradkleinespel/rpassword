@@ -33,6 +33,92 @@ use rtoolbox::print_tty::{print_tty, print_writer};
 use rtoolbox::safe_string::SafeString;
 use std::io::{BufRead, Write};
 
+/// Controls visual feedback when the user types a password.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PasswordFeedback {
+    /// Show nothing while typing (current default behavior).
+    Hide,
+    /// Show the given mask char for every character typed.
+    /// e.g. `Mask('*')` shows stars.
+    Mask(char),
+    /// Show the actual character for the first N chars, then the given
+    /// mask char for the rest.
+    /// e.g. `PartialMask('*', 3)` shows first 3 chars in plaintext, then stars.
+    PartialMask(char, usize),
+}
+
+struct FeedbackState {
+    password: SafeString,
+    displayed_count: usize,
+    feedback: PasswordFeedback,
+}
+
+impl FeedbackState {
+    fn new(feedback: PasswordFeedback) -> Self {
+        FeedbackState {
+            password: SafeString::new(),
+            displayed_count: 0,
+            feedback,
+        }
+    }
+
+    fn push_char(&mut self, c: char) -> Vec<u8> {
+        self.password.push(c);
+        match self.feedback {
+            PasswordFeedback::Hide => Vec::new(),
+            PasswordFeedback::Mask(mask) => {
+                self.displayed_count += 1;
+                char_to_bytes(mask)
+            }
+            PasswordFeedback::PartialMask(mask, n) => {
+                self.displayed_count += 1;
+                if self.displayed_count <= n {
+                    char_to_bytes(c)
+                } else {
+                    char_to_bytes(mask)
+                }
+            }
+        }
+    }
+
+    fn pop_char(&mut self) -> Vec<u8> {
+        let last_char = self.password.chars().last();
+        if let Some(c) = last_char {
+            let new_len = self.password.len() - c.len_utf8();
+            self.password.truncate(new_len);
+
+            if self.displayed_count > 0 {
+                self.displayed_count -= 1;
+                vec![0x08, b' ', 0x08]
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn clear(&mut self) -> Vec<u8> {
+        let count = self.displayed_count;
+        self.password = SafeString::new();
+        self.displayed_count = 0;
+        [0x08u8, b' ', 0x08].repeat(count)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.password.is_empty()
+    }
+
+    fn into_password(self) -> String {
+        self.password.into_inner()
+    }
+}
+
+fn char_to_bytes(c: char) -> Vec<u8> {
+    let mut buf = [0u8; 4];
+    c.encode_utf8(&mut buf).as_bytes().to_vec()
+}
+
 #[cfg(target_family = "wasm")]
 mod wasm {
     use std::io::{self, BufRead};
@@ -54,14 +140,35 @@ mod wasm {
         reader.read_line(&mut password)?;
         super::fix_line_issues(password.into_inner())
     }
+
+    /// Reads a password from TTY with visual feedback
+    pub fn read_password_with_feedback(
+        feedback: super::PasswordFeedback,
+    ) -> std::io::Result<String> {
+        match feedback {
+            super::PasswordFeedback::Hide => read_password(),
+            // WASM lacks termios; char-by-char reading with echo control is unsupported.
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "password feedback is not supported on WASM",
+            )),
+        }
+    }
 }
 
 #[cfg(target_family = "unix")]
 mod unix {
-    use libc::{c_int, tcsetattr, termios, ECHO, ECHONL, TCSANOW};
-    use std::io::{self, BufRead};
+    use libc::{c_int, tcsetattr, termios, ECHO, ECHONL, ICANON, ISIG, TCSANOW, VMIN, VTIME};
+    use std::io::{self, BufRead, Write};
     use std::mem;
     use std::os::unix::io::AsRawFd;
+
+    const BACKSPACE: u8 = 0x08;
+    const DEL: u8 = 0x7F;
+    const CTRL_C: u8 = 0x03;
+    const CTRL_D: u8 = 0x04;
+    const CTRL_U: u8 = 0x15;
+    const ESC: u8 = 0x1B;
 
     struct HiddenInput {
         fd: i32,
@@ -136,21 +243,179 @@ mod unix {
 
         super::fix_line_issues(password.into_inner())
     }
+
+    struct RawModeInput {
+        fd: i32,
+        term_orig: termios,
+    }
+
+    impl RawModeInput {
+        fn new(fd: i32) -> io::Result<RawModeInput> {
+            let mut term = safe_tcgetattr(fd)?;
+            let term_orig = safe_tcgetattr(fd)?;
+
+            term.c_lflag &= !(ECHO | ICANON | ECHONL | ISIG);
+            term.c_cc[VMIN] = 1;
+            term.c_cc[VTIME] = 0;
+
+            io_result(unsafe { tcsetattr(fd, TCSANOW, &term) })?;
+
+            Ok(RawModeInput { fd, term_orig })
+        }
+    }
+
+    impl Drop for RawModeInput {
+        fn drop(&mut self) {
+            unsafe {
+                tcsetattr(self.fd, TCSANOW, &self.term_orig);
+            }
+        }
+    }
+
+    /// Reads a password from TTY with visual feedback
+    pub fn read_password_with_feedback(
+        feedback: super::PasswordFeedback,
+    ) -> std::io::Result<String> {
+        if feedback == super::PasswordFeedback::Hide {
+            return read_password();
+        }
+
+        let mut tty = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")?;
+        let fd = tty.as_raw_fd();
+
+        let raw = RawModeInput::new(fd)?;
+        let mut state = super::FeedbackState::new(feedback);
+        let mut byte = [0u8; 1];
+
+        loop {
+            let n = unsafe { libc::read(fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
+            if n <= 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            match byte[0] {
+                // LF / CR (Enter)
+                b'\n' | b'\r' => {
+                    tty.write_all(b"\n")?;
+                    tty.flush()?;
+                    break;
+                }
+                // Backspace / DEL
+                DEL | BACKSPACE => {
+                    let output = state.pop_char();
+                    if !output.is_empty() {
+                        tty.write_all(&output)?;
+                        tty.flush()?;
+                    }
+                }
+                // Ctrl-U: clear line
+                CTRL_U => {
+                    let output = state.clear();
+                    if !output.is_empty() {
+                        tty.write_all(&output)?;
+                        tty.flush()?;
+                    }
+                }
+                // Ctrl-C: interrupt
+                CTRL_C => {
+                    tty.write_all(b"\n")?;
+                    tty.flush()?;
+                    std::mem::drop(raw);
+                    unsafe {
+                        libc::raise(libc::SIGINT);
+                    }
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Interrupted,
+                        "interrupted",
+                    ));
+                }
+                // Ctrl-D: EOF when empty
+                CTRL_D => {
+                    if state.is_empty() {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "unexpected end of file",
+                        ));
+                    }
+                }
+                // ESC: consume and discard escape sequence
+                ESC => loop {
+                    let n = unsafe { libc::read(fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
+                    if n <= 0 {
+                        break;
+                    }
+                    if (0x40..=0x7E).contains(&byte[0]) {
+                        break;
+                    }
+                },
+                // Printable ASCII
+                0x20..=0x7E => {
+                    let output = state.push_char(byte[0] as char);
+                    if !output.is_empty() {
+                        tty.write_all(&output)?;
+                        tty.flush()?;
+                    }
+                }
+                // UTF-8 multi-byte lead byte
+                0xC0..=0xF7 => {
+                    let width = match byte[0] {
+                        0xC0..=0xDF => 2,
+                        0xE0..=0xEF => 3,
+                        0xF0..=0xF7 => 4,
+                        _ => unreachable!(),
+                    };
+                    let mut utf8_buf = vec![byte[0]];
+                    for _ in 1..width {
+                        let n =
+                            unsafe { libc::read(fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
+                        if n <= 0 {
+                            break;
+                        }
+                        utf8_buf.push(byte[0]);
+                    }
+                    if let Ok(s) = std::str::from_utf8(&utf8_buf) {
+                        if let Some(c) = s.chars().next() {
+                            let output = state.push_char(c);
+                            if !output.is_empty() {
+                                tty.write_all(&output)?;
+                                tty.flush()?;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(state.into_password())
+    }
 }
 
 #[cfg(target_family = "windows")]
 mod windows {
-    use std::io::BufRead;
-    use std::io::{self, BufReader};
+    use std::io::{self, BufRead, BufReader, Write};
     use std::os::windows::io::FromRawHandle;
     use windows_sys::core::PCSTR;
-    use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Foundation::{
+        GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
+    };
     use windows_sys::Win32::Storage::FileSystem::{
         CreateFileA, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
     use windows_sys::Win32::System::Console::{
-        GetConsoleMode, SetConsoleMode, CONSOLE_MODE, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT,
+        GetConsoleMode, ReadConsoleW, SetConsoleMode, CONSOLE_MODE, ENABLE_LINE_INPUT,
+        ENABLE_PROCESSED_INPUT,
     };
+
+    const BACKSPACE: char = '\x08';
+    const DEL: char = '\x7F';
+    const CTRL_C: char = '\x03';
+    const CTRL_D: char = '\x04';
+    const CTRL_U: char = '\x15';
+    const ESC: char = '\x1B';
 
     struct HiddenInput {
         mode: u32,
@@ -229,14 +494,220 @@ mod windows {
 
         super::fix_line_issues(password.into_inner())
     }
+
+    struct RawModeInput {
+        mode: u32,
+        handle: HANDLE,
+    }
+
+    impl RawModeInput {
+        fn new(handle: HANDLE) -> io::Result<RawModeInput> {
+            let mut mode = 0;
+
+            if unsafe { GetConsoleMode(handle, &mut mode as *mut CONSOLE_MODE) } == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            if unsafe { SetConsoleMode(handle, ENABLE_PROCESSED_INPUT) } == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            Ok(RawModeInput { mode, handle })
+        }
+    }
+
+    impl Drop for RawModeInput {
+        fn drop(&mut self) {
+            unsafe {
+                SetConsoleMode(self.handle, self.mode);
+            }
+        }
+    }
+
+    /// Reads a password from TTY with visual feedback
+    pub fn read_password_with_feedback(
+        feedback: super::PasswordFeedback,
+    ) -> std::io::Result<String> {
+        if feedback == super::PasswordFeedback::Hide {
+            return read_password();
+        }
+
+        let in_handle = unsafe {
+            CreateFileA(
+                b"CONIN$\x00".as_ptr() as PCSTR,
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                0,
+                INVALID_HANDLE_VALUE,
+            )
+        };
+        if in_handle == INVALID_HANDLE_VALUE {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        let out_handle = unsafe {
+            CreateFileA(
+                b"CONOUT$\x00".as_ptr() as PCSTR,
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                0,
+                INVALID_HANDLE_VALUE,
+            )
+        };
+        if out_handle == INVALID_HANDLE_VALUE {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        let mut out_stream = unsafe { std::fs::File::from_raw_handle(out_handle as _) };
+
+        let _raw = RawModeInput::new(in_handle)?;
+        let mut state = super::FeedbackState::new(feedback);
+
+        loop {
+            let mut buf: [u16; 1] = [0];
+            let mut chars_read: u32 = 0;
+            if unsafe {
+                ReadConsoleW(
+                    in_handle,
+                    buf.as_mut_ptr() as *mut std::ffi::c_void,
+                    1,
+                    &mut chars_read,
+                    std::ptr::null(),
+                )
+            } == 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            if chars_read == 0 {
+                continue;
+            }
+
+            let wchar = buf[0];
+
+            // Handle UTF-16 surrogate pairs: characters above U+FFFF (e.g. emoji)
+            // are split across two u16 values — a high surrogate (0xD800..0xDBFF)
+            // followed by a low surrogate. Read the second half before decoding.
+            let c = if (0xD800..=0xDBFF).contains(&wchar) {
+                let mut buf2: [u16; 1] = [0];
+                let mut chars_read2: u32 = 0;
+                if unsafe {
+                    ReadConsoleW(
+                        in_handle,
+                        buf2.as_mut_ptr() as *mut std::ffi::c_void,
+                        1,
+                        &mut chars_read2,
+                        std::ptr::null(),
+                    )
+                } == 0
+                {
+                    return Err(std::io::Error::last_os_error());
+                }
+                match char::decode_utf16([wchar, buf2[0]])
+                    .next()
+                    .and_then(|r| r.ok())
+                {
+                    Some(c) => c,
+                    None => continue,
+                }
+            } else {
+                match char::from_u32(wchar as u32) {
+                    Some(c) => c,
+                    None => continue,
+                }
+            };
+
+            match c {
+                // LF / CR (Enter)
+                '\n' | '\r' => {
+                    out_stream.write_all(b"\n")?;
+                    out_stream.flush()?;
+                    break;
+                }
+                // Backspace / DEL
+                DEL | BACKSPACE => {
+                    let output = state.pop_char();
+                    if !output.is_empty() {
+                        out_stream.write_all(&output)?;
+                        out_stream.flush()?;
+                    }
+                }
+                // Ctrl-U: clear line
+                CTRL_U => {
+                    let output = state.clear();
+                    if !output.is_empty() {
+                        out_stream.write_all(&output)?;
+                        out_stream.flush()?;
+                    }
+                }
+                // Ctrl-C: interrupt
+                CTRL_C => {
+                    out_stream.write_all(b"\n")?;
+                    out_stream.flush()?;
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Interrupted,
+                        "interrupted",
+                    ));
+                }
+                // Ctrl-D: EOF when empty
+                CTRL_D => {
+                    if state.is_empty() {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "unexpected end of file",
+                        ));
+                    }
+                }
+                // ESC: consume and discard escape sequence
+                ESC => loop {
+                    let mut buf3: [u16; 1] = [0];
+                    let mut chars_read3: u32 = 0;
+                    if unsafe {
+                        ReadConsoleW(
+                            in_handle,
+                            buf3.as_mut_ptr() as *mut std::ffi::c_void,
+                            1,
+                            &mut chars_read3,
+                            std::ptr::null(),
+                        )
+                    } == 0
+                    {
+                        break;
+                    }
+                    if (0x40..=0x7E).contains(&buf3[0]) {
+                        break;
+                    }
+                },
+                c if c >= ' ' && !c.is_control() => {
+                    let output = state.push_char(c);
+                    if !output.is_empty() {
+                        out_stream.write_all(&output)?;
+                        out_stream.flush()?;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(state.into_password())
+    }
 }
 
 #[cfg(target_family = "unix")]
 pub use unix::read_password;
+#[cfg(target_family = "unix")]
+pub use unix::read_password_with_feedback;
 #[cfg(target_family = "wasm")]
 pub use wasm::read_password;
+#[cfg(target_family = "wasm")]
+pub use wasm::read_password_with_feedback;
 #[cfg(target_family = "windows")]
 pub use windows::read_password;
+#[cfg(target_family = "windows")]
+pub use windows::read_password_with_feedback;
 
 /// Reads a password from `impl BufRead`
 pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<String> {
@@ -261,8 +732,17 @@ pub fn prompt_password(prompt: impl ToString) -> std::io::Result<String> {
     print_tty(prompt.to_string().as_str()).and_then(|_| read_password())
 }
 
+/// Prompts on the TTY and then reads a password from TTY with visual feedback
+pub fn prompt_password_with_feedback(
+    prompt: impl ToString,
+    feedback: PasswordFeedback,
+) -> std::io::Result<String> {
+    print_tty(prompt.to_string().as_str()).and_then(|_| read_password_with_feedback(feedback))
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::io::Cursor;
 
     fn mock_input_crlf() -> Cursor<&'static [u8]> {
@@ -277,15 +757,78 @@ mod tests {
     fn can_read_from_redirected_input_many_times() {
         let mut reader_crlf = mock_input_crlf();
 
-        let response = super::read_password_from_bufread(&mut reader_crlf).unwrap();
+        let response = read_password_from_bufread(&mut reader_crlf).unwrap();
         assert_eq!(response, "A mocked response.");
-        let response = super::read_password_from_bufread(&mut reader_crlf).unwrap();
+        let response = read_password_from_bufread(&mut reader_crlf).unwrap();
         assert_eq!(response, "Another mocked response.");
 
         let mut reader_lf = mock_input_lf();
-        let response = super::read_password_from_bufread(&mut reader_lf).unwrap();
+        let response = read_password_from_bufread(&mut reader_lf).unwrap();
         assert_eq!(response, "A mocked response.");
-        let response = super::read_password_from_bufread(&mut reader_lf).unwrap();
+        let response = read_password_from_bufread(&mut reader_lf).unwrap();
         assert_eq!(response, "Another mocked response.");
+    }
+
+    #[test]
+    fn feedback_state_mask_star() {
+        let mut state = FeedbackState::new(PasswordFeedback::Mask('*'));
+        assert_eq!(state.push_char('a'), b"*");
+        assert_eq!(state.push_char('b'), b"*");
+        assert_eq!(state.push_char('c'), b"*");
+        assert_eq!(state.pop_char(), vec![0x08, b' ', 0x08]);
+        assert_eq!(state.into_password(), "ab");
+    }
+
+    #[test]
+    fn feedback_state_mask_hash() {
+        let mut state = FeedbackState::new(PasswordFeedback::Mask('#'));
+        assert_eq!(state.push_char('x'), b"#");
+        assert_eq!(state.push_char('y'), b"#");
+        assert_eq!(state.into_password(), "xy");
+    }
+
+    #[test]
+    fn feedback_state_hide() {
+        let mut state = FeedbackState::new(PasswordFeedback::Hide);
+        assert!(state.push_char('a').is_empty());
+        assert!(state.push_char('b').is_empty());
+        assert!(state.pop_char().is_empty());
+        assert_eq!(state.into_password(), "a");
+    }
+
+    #[test]
+    fn feedback_state_partial_mask() {
+        let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 3));
+        assert_eq!(state.push_char('a'), b"a");
+        assert_eq!(state.push_char('b'), b"b");
+        assert_eq!(state.push_char('c'), b"c");
+        assert_eq!(state.push_char('d'), b"*");
+        assert_eq!(state.push_char('e'), b"*");
+        assert_eq!(state.into_password(), "abcde");
+    }
+
+    #[test]
+    fn feedback_state_backspace_empty() {
+        let mut state = FeedbackState::new(PasswordFeedback::Mask('*'));
+        assert!(state.pop_char().is_empty());
+    }
+
+    #[test]
+    fn feedback_state_clear() {
+        let mut state = FeedbackState::new(PasswordFeedback::Mask('*'));
+        state.push_char('a');
+        state.push_char('b');
+        state.push_char('c');
+        let erase = state.clear();
+        assert_eq!(erase, [0x08u8, b' ', 0x08].repeat(3));
+        assert!(state.is_empty());
+    }
+
+    #[test]
+    fn feedback_state_partial_mask_zero() {
+        let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 0));
+        assert_eq!(state.push_char('a'), b"*");
+        assert_eq!(state.push_char('b'), b"*");
+        assert_eq!(state.into_password(), "ab");
     }
 }
