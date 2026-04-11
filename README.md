@@ -5,8 +5,6 @@ It's similar to Linux's C function `getpass()` or Python's `getpass` module.
 
 ![rpassword logo and headline](rpassword.png)
 
-`rpassword` is made available free of charge. You can support its development through [Liberapay](https://liberapay.com/conradkleinespel/) 💪
-
 ## Usage
 
 Add `rpassword` as a dependency in Cargo.toml:
