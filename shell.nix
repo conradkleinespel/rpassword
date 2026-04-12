@@ -1,10 +1,10 @@
-{ pkgs ? import <nixpkgs> {} }:
-
+{pkgs ? import <nixpkgs> {}}:
 pkgs.mkShell {
   buildInputs = with pkgs; [
-    cargo
-    rustc
-    rustfmt
-    clippy
+    rustup
   ];
+  shellHook = ''
+    rustup default stable
+    rustup component add rust-src
+  '';
 }
