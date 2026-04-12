@@ -1,7 +1,5 @@
 # Contributing
 
-Development for this project takes place in the [conradkleinespel/duck](https://github.com/conradkleinespel/duck) repository, a mono-repo that makes code reuse easier.
-
 You are welcome to contribute to this project, following a couple of guidelines. The main principle is that we want to respect each other's time.
 
 ## Bug reports
