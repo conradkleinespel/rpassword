@@ -31,6 +31,7 @@
 use rtoolbox::fix_line_issues::fix_line_issues;
 use rtoolbox::print_tty::{print_tty, print_writer};
 use rtoolbox::safe_string::SafeString;
+use std::fmt::Debug;
 use std::io::{BufRead, Write};
 
 /// Controls visual feedback when the user types a password.
@@ -55,17 +56,9 @@ impl Default for PasswordFeedback {
 }
 
 /// Configuration for prompting and reading a password.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Config {
     pub feedback: PasswordFeedback,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            feedback: PasswordFeedback::Hide,
-        }
-    }
 }
 
 /// A builder for creating a [`Config`].
@@ -75,15 +68,13 @@ pub struct ConfigBuilder {
 }
 
 impl ConfigBuilder {
-    /// Creates a new builder with default settings.
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new() -> ConfigBuilder {
+        ConfigBuilder::default()
     }
 
     /// Sets the visual feedback for the password.
-    pub fn password_feedback(mut self, feedback: PasswordFeedback) -> Self {
-        self.feedback = feedback;
-        self
+    pub fn password_feedback(self, feedback: PasswordFeedback) -> ConfigBuilder {
+        ConfigBuilder { feedback }
     }
 
     /// Builds the final [`Config`].
@@ -204,8 +195,9 @@ mod wasm {
 
 #[cfg(target_family = "unix")]
 mod unix {
-    use super::{Config, ConfigBuilder, FeedbackState};
     use libc::{c_int, tcsetattr, termios, ECHO, ECHONL, ICANON, ISIG, TCSANOW, VMIN, VTIME};
+    use super::{Config, FeedbackState, PasswordFeedback};
+    use std::fs::File;
     use std::io::{self, Write};
     use std::mem;
     use std::os::unix::io::AsRawFd;
@@ -231,32 +223,29 @@ mod unix {
         Ok(unsafe { term.assume_init() })
     }
 
-    /// Reads a password from the TTY
-    pub fn read_password() -> std::io::Result<String> {
-        read_password_with_config(ConfigBuilder::new().build())
-    }
-
-    struct RawModeInput {
+    struct RawModeInputConfiguration {
         fd: i32,
         term_orig: termios,
     }
 
-    impl RawModeInput {
-        fn new(fd: i32) -> io::Result<RawModeInput> {
-            let mut term = safe_tcgetattr(fd)?;
-            let term_orig = safe_tcgetattr(fd)?;
+    impl RawModeInputConfiguration {
+        fn new(fd: i32) -> io::Result<Self> {
+            Ok(RawModeInputConfiguration {
+                fd,
+                term_orig: safe_tcgetattr(fd)?,
+            })
+        }
 
+        fn apply(&self) -> io::Result<()> {
+            let mut term = safe_tcgetattr(self.fd)?;
             term.c_lflag &= !(ECHO | ICANON | ECHONL | ISIG);
             term.c_cc[VMIN] = 1;
             term.c_cc[VTIME] = 0;
-
-            io_result(unsafe { tcsetattr(fd, TCSANOW, &term) })?;
-
-            Ok(RawModeInput { fd, term_orig })
+            io_result(unsafe { tcsetattr(self.fd, TCSANOW, &term) })
         }
     }
 
-    impl Drop for RawModeInput {
+    impl Drop for RawModeInputConfiguration {
         fn drop(&mut self) {
             unsafe {
                 tcsetattr(self.fd, TCSANOW, &self.term_orig);
@@ -264,137 +253,166 @@ mod unix {
         }
     }
 
-    /// Reads a password from TTY using the given config
-    pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
-        let mut tty = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open("/dev/tty")?;
-        let fd = tty.as_raw_fd();
+    struct RawModeInput {
+        tty: File,
+        fd: i32,
+        password_feedback: PasswordFeedback,
+    }
 
-        let raw = RawModeInput::new(fd)?;
-        let mut state = FeedbackState::new(config.feedback);
-        let mut byte = [0u8; 1];
+    impl RawModeInput {
+        fn new(password_feedback: PasswordFeedback) -> io::Result<RawModeInput> {
+            let tty = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open("/dev/tty")?;
+            let fd = tty.as_raw_fd();
+            Ok(RawModeInput {
+                tty,
+                fd,
+                password_feedback,
+            })
+        }
 
-        loop {
-            let n = unsafe { libc::read(fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
-            if n <= 0 {
-                return Err(std::io::Error::last_os_error());
-            }
+        fn read_password(&mut self) -> std::io::Result<String> {
+            let raw_mode_input_configuration = RawModeInputConfiguration::new(self.fd)?;
+            raw_mode_input_configuration.apply()?;
 
-            match byte[0] {
-                // LF / CR (Enter)
-                b'\n' | b'\r' => {
-                    tty.write_all(b"\n")?;
-                    tty.flush()?;
-                    break;
+            let mut state = FeedbackState::new(self.password_feedback);
+            let mut byte = [0u8; 1];
+
+            loop {
+                let n = unsafe { libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
+                if n <= 0 {
+                    return Err(std::io::Error::last_os_error());
                 }
-                // Backspace / DEL
-                DEL | BACKSPACE => {
-                    let output = state.pop_char();
-                    if !output.is_empty() {
-                        tty.write_all(&output)?;
-                        tty.flush()?;
+
+                match byte[0] {
+                    // LF / CR (Enter)
+                    b'\n' | b'\r' => {
+                        self.tty.write_all(b"\n")?;
+                        self.tty.flush()?;
+                        break;
                     }
-                }
-                // Ctrl-U: clear line
-                CTRL_U => {
-                    let output = state.clear();
-                    if !output.is_empty() {
-                        tty.write_all(&output)?;
-                        tty.flush()?;
+                    // Backspace / DEL
+                    DEL | BACKSPACE => {
+                        let output = state.pop_char();
+                        if !output.is_empty() {
+                            self.tty.write_all(&output)?;
+                            self.tty.flush()?;
+                        }
                     }
-                }
-                // Ctrl-C: interrupt
-                CTRL_C => {
-                    tty.write_all(b"\n")?;
-                    tty.flush()?;
-                    std::mem::drop(raw);
-                    unsafe {
-                        libc::raise(libc::SIGINT);
+                    // Ctrl-U: clear line
+                    CTRL_U => {
+                        let output = state.clear();
+                        if !output.is_empty() {
+                            self.tty.write_all(&output)?;
+                            self.tty.flush()?;
+                        }
                     }
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Interrupted,
-                        "interrupted",
-                    ));
-                }
-                // Ctrl-D: EOF when empty
-                CTRL_D => {
-                    if state.is_empty() {
+                    // Ctrl-C: interrupt
+                    CTRL_C => {
+                        self.tty.write_all(b"\n")?;
+                        self.tty.flush()?;
+                        unsafe {
+                            libc::raise(libc::SIGINT);
+                        }
                         return Err(std::io::Error::new(
-                            std::io::ErrorKind::UnexpectedEof,
-                            "unexpected end of file",
+                            std::io::ErrorKind::Interrupted,
+                            "interrupted",
                         ));
                     }
-                }
-                // ESC: consume and discard escape sequence
-                ESC => {
-                    let n = unsafe { libc::read(fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
-                    if n > 0 && (byte[0] == b'[' || byte[0] == b'O') {
-                        // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
-                        loop {
+                    // Ctrl-D: EOF when empty
+                    CTRL_D => {
+                        if state.is_empty() {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::UnexpectedEof,
+                                "unexpected end of file",
+                            ));
+                        }
+                    }
+                    // ESC: consume and discard escape sequence
+                    ESC => {
+                        let n = unsafe {
+                            libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1)
+                        };
+                        if n > 0 && (byte[0] == b'[' || byte[0] == b'O') {
+                            // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
+                            loop {
+                                let n = unsafe {
+                                    libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1)
+                                };
+                                if n <= 0 {
+                                    break;
+                                }
+                                if (0x40..=0x7E).contains(&byte[0]) {
+                                    break;
+                                }
+                            }
+                        }
+                        // Otherwise: 2-byte sequence (ESC + char), already consumed
+                    }
+                    // Printable ASCII
+                    0x20..=0x7E => {
+                        let output = state.push_char(byte[0] as char);
+                        if !output.is_empty() {
+                            self.tty.write_all(&output)?;
+                            self.tty.flush()?;
+                        }
+                    }
+                    // UTF-8 multi-byte lead byte
+                    0xC0..=0xF7 => {
+                        let width = match byte[0] {
+                            0xC0..=0xDF => 2,
+                            0xE0..=0xEF => 3,
+                            0xF0..=0xF7 => 4,
+                            _ => unreachable!(),
+                        };
+                        let mut utf8_buf = vec![byte[0]];
+                        for _ in 1..width {
                             let n = unsafe {
-                                libc::read(fd, byte.as_mut_ptr() as *mut libc::c_void, 1)
+                                libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1)
                             };
                             if n <= 0 {
                                 break;
                             }
-                            if (0x40..=0x7E).contains(&byte[0]) {
-                                break;
+                            utf8_buf.push(byte[0]);
+                        }
+                        if let Ok(s) = std::str::from_utf8(&utf8_buf) {
+                            if let Some(c) = s.chars().next() {
+                                let output = state.push_char(c);
+                                if !output.is_empty() {
+                                    self.tty.write_all(&output)?;
+                                    self.tty.flush()?;
+                                }
                             }
                         }
                     }
-                    // Otherwise: 2-byte sequence (ESC + char), already consumed
+                    // Discard unrecognized control characters (Ctrl-A, Ctrl-B, etc.)
+                    // and invalid bytes (bad UTF-8 continuations, 0xF8-0xFF)
+                    _ => {}
                 }
-                // Printable ASCII
-                0x20..=0x7E => {
-                    let output = state.push_char(byte[0] as char);
-                    if !output.is_empty() {
-                        tty.write_all(&output)?;
-                        tty.flush()?;
-                    }
-                }
-                // UTF-8 multi-byte lead byte
-                0xC0..=0xF7 => {
-                    let width = match byte[0] {
-                        0xC0..=0xDF => 2,
-                        0xE0..=0xEF => 3,
-                        0xF0..=0xF7 => 4,
-                        _ => unreachable!(),
-                    };
-                    let mut utf8_buf = vec![byte[0]];
-                    for _ in 1..width {
-                        let n =
-                            unsafe { libc::read(fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
-                        if n <= 0 {
-                            break;
-                        }
-                        utf8_buf.push(byte[0]);
-                    }
-                    if let Ok(s) = std::str::from_utf8(&utf8_buf) {
-                        if let Some(c) = s.chars().next() {
-                            let output = state.push_char(c);
-                            if !output.is_empty() {
-                                tty.write_all(&output)?;
-                                tty.flush()?;
-                            }
-                        }
-                    }
-                }
-                // Discard unrecognized control characters (Ctrl-A, Ctrl-B, etc.)
-                // and invalid bytes (bad UTF-8 continuations, 0xF8-0xFF)
-                _ => {}
             }
-        }
 
-        Ok(state.into_password())
+            Ok(state.into_password())
+        }
+    }
+
+    /// Reads a password from TTY using the given config
+    pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
+        let mut raw_mode_input = RawModeInput::new(config.feedback)?;
+        raw_mode_input.read_password()
+    }
+
+    /// Reads a password from the TTY
+    pub fn read_password() -> std::io::Result<String> {
+        read_password_with_config(Config::default())
     }
 }
 
 #[cfg(target_family = "windows")]
 mod windows {
-    use super::{Config, ConfigBuilder, FeedbackState, PasswordFeedback, SafeString};
-    use std::io::{self, BufRead, BufReader, Write};
+    use super::{Config, FeedbackState, PasswordFeedback};
+    use std::io::{self, Write};
     use std::os::windows::io::FromRawHandle;
     use windows_sys::core::PCSTR;
     use windows_sys::Win32::Foundation::{
@@ -404,7 +422,7 @@ mod windows {
         CreateFileA, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
     use windows_sys::Win32::System::Console::{
-        GetConsoleMode, ReadConsoleW, SetConsoleMode, CONSOLE_MODE, ENABLE_LINE_INPUT,
+        GetConsoleMode, ReadConsoleW, SetConsoleMode, CONSOLE_MODE,
         ENABLE_PROCESSED_INPUT,
     };
 
@@ -415,33 +433,34 @@ mod windows {
     const CTRL_U: char = '\x15';
     const ESC: char = '\x1B';
 
-    /// Reads a password from the TTY
-    pub fn read_password() -> std::io::Result<String> {
-        read_password_with_config(ConfigBuilder::new().build())
-    }
-
-    struct RawModeInput {
+    struct RawModeInputConfiguration {
         mode: u32,
         handle: HANDLE,
     }
 
-    impl RawModeInput {
-        fn new(handle: HANDLE) -> io::Result<RawModeInput> {
+    impl RawModeInputConfiguration {
+        fn new(handle: HANDLE) -> io::Result<Self> {
             let mut mode = 0;
 
             if unsafe { GetConsoleMode(handle, &mut mode as *mut CONSOLE_MODE) } == 0 {
                 return Err(std::io::Error::last_os_error());
             }
 
-            if unsafe { SetConsoleMode(handle, ENABLE_PROCESSED_INPUT) } == 0 {
+            Ok(RawModeInputConfiguration {
+                handle,
+                mode,
+            })
+        }
+
+        fn apply(&self) -> io::Result<()> {
+            if unsafe { SetConsoleMode(self.handle, ENABLE_PROCESSED_INPUT) } == 0 {
                 return Err(std::io::Error::last_os_error());
             }
-
-            Ok(RawModeInput { mode, handle })
+            Ok(())
         }
     }
 
-    impl Drop for RawModeInput {
+    impl Drop for RawModeInputConfiguration {
         fn drop(&mut self) {
             unsafe {
                 SetConsoleMode(self.handle, self.mode);
@@ -449,195 +468,215 @@ mod windows {
         }
     }
 
-    /// Reads a password from TTY using the given config
-    pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
-        if config.feedback == PasswordFeedback::Hide {
-            return read_password();
-        }
+    struct RawModeInput {
+        input_handle: HANDLE,
+        password_feedback: PasswordFeedback,
+    }
 
-        let in_handle = unsafe {
-            CreateFileA(
-                b"CONIN$\x00".as_ptr() as PCSTR,
-                GENERIC_READ | GENERIC_WRITE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
-                std::ptr::null(),
-                OPEN_EXISTING,
-                0,
-                INVALID_HANDLE_VALUE,
-            )
-        };
-        if in_handle == INVALID_HANDLE_VALUE {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        let out_handle = unsafe {
-            CreateFileA(
-                b"CONOUT$\x00".as_ptr() as PCSTR,
-                GENERIC_READ | GENERIC_WRITE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
-                std::ptr::null(),
-                OPEN_EXISTING,
-                0,
-                INVALID_HANDLE_VALUE,
-            )
-        };
-        if out_handle == INVALID_HANDLE_VALUE {
-            return Err(std::io::Error::last_os_error());
-        }
-
-        let mut out_stream = unsafe { std::fs::File::from_raw_handle(out_handle as _) };
-
-        let _raw = RawModeInput::new(in_handle)?;
-        let mut state = FeedbackState::new(config.feedback);
-
-        loop {
-            let mut buf: [u16; 1] = [0];
-            let mut chars_read: u32 = 0;
-            if unsafe {
-                ReadConsoleW(
-                    in_handle,
-                    buf.as_mut_ptr() as *mut std::ffi::c_void,
-                    1,
-                    &mut chars_read,
+    impl RawModeInput {
+        fn new(password_feedback: PasswordFeedback) -> io::Result<RawModeInput> {
+            let input_handle = unsafe {
+                CreateFileA(
+                    b"CONIN$\x00".as_ptr() as PCSTR,
+                    GENERIC_READ | GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
                     std::ptr::null(),
+                    OPEN_EXISTING,
+                    0,
+                    INVALID_HANDLE_VALUE,
                 )
-            } == 0
-            {
+            };
+            if input_handle == INVALID_HANDLE_VALUE {
                 return Err(std::io::Error::last_os_error());
             }
-            if chars_read == 0 {
-                continue;
+
+            Ok(RawModeInput { input_handle, password_feedback })
+        }
+
+        /// Reads a password from TTY using the given config
+        pub fn read_password(&self) -> std::io::Result<String> {
+            let raw_mode_input_configuration = RawModeInputConfiguration::new(self.input_handle)?;
+            raw_mode_input_configuration.apply()?;
+
+            let output_handle = unsafe {
+                CreateFileA(
+                    b"CONOUT$\x00".as_ptr() as PCSTR,
+                    GENERIC_READ | GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    std::ptr::null(),
+                    OPEN_EXISTING,
+                    0,
+                    INVALID_HANDLE_VALUE,
+                )
+            };
+            if output_handle == INVALID_HANDLE_VALUE {
+                return Err(std::io::Error::last_os_error());
             }
 
-            let wchar = buf[0];
+            let mut out_stream = unsafe { std::fs::File::from_raw_handle(output_handle as _) };
 
-            // Handle UTF-16 surrogate pairs: characters above U+FFFF (e.g. emoji)
-            // are split across two u16 values — a high surrogate (0xD800..0xDBFF)
-            // followed by a low surrogate. Read the second half before decoding.
-            let c = if (0xD800..=0xDBFF).contains(&wchar) {
-                let mut buf2: [u16; 1] = [0];
-                let mut chars_read2: u32 = 0;
+            let mut state = FeedbackState::new(self.password_feedback);
+
+            loop {
+                let mut buf: [u16; 1] = [0];
+                let mut chars_read: u32 = 0;
                 if unsafe {
                     ReadConsoleW(
-                        in_handle,
-                        buf2.as_mut_ptr() as *mut std::ffi::c_void,
+                        self.input_handle,
+                        buf.as_mut_ptr() as *mut std::ffi::c_void,
                         1,
-                        &mut chars_read2,
+                        &mut chars_read,
                         std::ptr::null(),
                     )
                 } == 0
                 {
                     return Err(std::io::Error::last_os_error());
                 }
-                match char::decode_utf16([wchar, buf2[0]])
-                    .next()
-                    .and_then(|r| r.ok())
-                {
-                    Some(c) => c,
-                    // Invalid/mismatched surrogate pair; shouldn't happen with
-                    // ReadConsoleW but we skip gracefully rather than panicking.
-                    None => continue,
+                if chars_read == 0 {
+                    continue;
                 }
-            } else {
-                match char::from_u32(wchar as u32) {
-                    Some(c) => c,
-                    // Orphaned surrogate (0xD800-0xDFFF) as a lone u16; defensive
-                    // guard since ReadConsoleW shouldn't produce these.
-                    None => continue,
-                }
-            };
 
-            match c {
-                // LF / CR (Enter)
-                '\n' | '\r' => {
-                    out_stream.write_all(b"\n")?;
-                    out_stream.flush()?;
-                    break;
-                }
-                // Backspace / DEL
-                DEL | BACKSPACE => {
-                    let output = state.pop_char();
-                    if !output.is_empty() {
-                        out_stream.write_all(&output)?;
-                        out_stream.flush()?;
-                    }
-                }
-                // Ctrl-U: clear line
-                CTRL_U => {
-                    let output = state.clear();
-                    if !output.is_empty() {
-                        out_stream.write_all(&output)?;
-                        out_stream.flush()?;
-                    }
-                }
-                // Ctrl-C: interrupt
-                CTRL_C => {
-                    out_stream.write_all(b"\n")?;
-                    out_stream.flush()?;
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Interrupted,
-                        "interrupted",
-                    ));
-                }
-                // Ctrl-D: EOF when empty
-                CTRL_D => {
-                    if state.is_empty() {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::UnexpectedEof,
-                            "unexpected end of file",
-                        ));
-                    }
-                }
-                // ESC: consume and discard escape sequence
-                ESC => {
-                    let mut buf3: [u16; 1] = [0];
-                    let mut chars_read3: u32 = 0;
-                    let ok = unsafe {
+                let wchar = buf[0];
+
+                // Handle UTF-16 surrogate pairs: characters above U+FFFF (e.g. emoji)
+                // are split across two u16 values — a high surrogate (0xD800..0xDBFF)
+                // followed by a low surrogate. Read the second half before decoding.
+                let c = if (0xD800..=0xDBFF).contains(&wchar) {
+                    let mut buf2: [u16; 1] = [0];
+                    let mut chars_read2: u32 = 0;
+                    if unsafe {
                         ReadConsoleW(
-                            in_handle,
-                            buf3.as_mut_ptr() as *mut std::ffi::c_void,
+                            self.input_handle,
+                            buf2.as_mut_ptr() as *mut std::ffi::c_void,
                             1,
-                            &mut chars_read3,
+                            &mut chars_read2,
                             std::ptr::null(),
                         )
-                    } != 0;
-                    if ok && (buf3[0] == b'[' as u16 || buf3[0] == b'O' as u16) {
-                        // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
-                        loop {
-                            let mut buf4: [u16; 1] = [0];
-                            let mut chars_read4: u32 = 0;
-                            if unsafe {
-                                ReadConsoleW(
-                                    in_handle,
-                                    buf4.as_mut_ptr() as *mut std::ffi::c_void,
-                                    1,
-                                    &mut chars_read4,
-                                    std::ptr::null(),
-                                )
-                            } == 0
-                            {
-                                break;
-                            }
-                            if (0x40..=0x7E).contains(&buf4[0]) {
-                                break;
-                            }
+                    } == 0
+                    {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    match char::decode_utf16([wchar, buf2[0]])
+                        .next()
+                        .and_then(|r| r.ok())
+                    {
+                        Some(c) => c,
+                        // Invalid/mismatched surrogate pair; shouldn't happen with
+                        // ReadConsoleW but we skip gracefully rather than panicking.
+                        None => continue,
+                    }
+                } else {
+                    match char::from_u32(wchar as u32) {
+                        Some(c) => c,
+                        // Orphaned surrogate (0xD800-0xDFFF) as a lone u16; defensive
+                        // guard since ReadConsoleW shouldn't produce these.
+                        None => continue,
+                    }
+                };
+
+                match c {
+                    // LF / CR (Enter)
+                    '\n' | '\r' => {
+                        out_stream.write_all(b"\n")?;
+                        out_stream.flush()?;
+                        break;
+                    }
+                    // Backspace / DEL
+                    DEL | BACKSPACE => {
+                        let output = state.pop_char();
+                        if !output.is_empty() {
+                            out_stream.write_all(&output)?;
+                            out_stream.flush()?;
                         }
                     }
-                    // Otherwise: 2-byte sequence (ESC + char), already consumed
-                }
-                c if c >= ' ' && !c.is_control() => {
-                    let output = state.push_char(c);
-                    if !output.is_empty() {
-                        out_stream.write_all(&output)?;
-                        out_stream.flush()?;
+                    // Ctrl-U: clear line
+                    CTRL_U => {
+                        let output = state.clear();
+                        if !output.is_empty() {
+                            out_stream.write_all(&output)?;
+                            out_stream.flush()?;
+                        }
                     }
+                    // Ctrl-C: interrupt
+                    CTRL_C => {
+                        out_stream.write_all(b"\n")?;
+                        out_stream.flush()?;
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::Interrupted,
+                            "interrupted",
+                        ));
+                    }
+                    // Ctrl-D: EOF when empty
+                    CTRL_D => {
+                        if state.is_empty() {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::UnexpectedEof,
+                                "unexpected end of file",
+                            ));
+                        }
+                    }
+                    // ESC: consume and discard escape sequence
+                    ESC => {
+                        let mut buf3: [u16; 1] = [0];
+                        let mut chars_read3: u32 = 0;
+                        let ok = unsafe {
+                            ReadConsoleW(
+                                self.input_handle,
+                                buf3.as_mut_ptr() as *mut std::ffi::c_void,
+                                1,
+                                &mut chars_read3,
+                                std::ptr::null(),
+                            )
+                        } != 0;
+                        if ok && (buf3[0] == b'[' as u16 || buf3[0] == b'O' as u16) {
+                            // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
+                            loop {
+                                let mut buf4: [u16; 1] = [0];
+                                let mut chars_read4: u32 = 0;
+                                if unsafe {
+                                    ReadConsoleW(
+                                        self.input_handle,
+                                        buf4.as_mut_ptr() as *mut std::ffi::c_void,
+                                        1,
+                                        &mut chars_read4,
+                                        std::ptr::null(),
+                                    )
+                                } == 0
+                                {
+                                    break;
+                                }
+                                if (0x40..=0x7E).contains(&buf4[0]) {
+                                    break;
+                                }
+                            }
+                        }
+                        // Otherwise: 2-byte sequence (ESC + char), already consumed
+                    }
+                    c if c >= ' ' && !c.is_control() => {
+                        let output = state.push_char(c);
+                        if !output.is_empty() {
+                            out_stream.write_all(&output)?;
+                            out_stream.flush()?;
+                        }
+                    }
+                    // Discard unrecognized control characters and invalid input
+                    _ => {}
                 }
-                // Discard unrecognized control characters and invalid input
-                _ => {}
             }
-        }
 
-        Ok(state.into_password())
+            Ok(state.into_password())
+        }
+    }
+
+    /// Reads a password from TTY using the given config
+    pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
+        let raw_mode_input = RawModeInput::new(config.feedback)?;
+        raw_mode_input.read_password()
+    }
+
+    /// Reads a password from the TTY
+    pub fn read_password() -> std::io::Result<String> {
+        read_password_with_config(Config::default())
     }
 }
 
