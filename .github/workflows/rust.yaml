@@ -3,20 +3,27 @@ name: Rust
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
     branches:
-      - master
+      - main
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # https://github.com/actions/cache/blob/main/examples.md#rust---cargo
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # Cache cargo dependencies
       - uses: actions/cache@v4
         with:
           path: |
@@ -25,7 +32,9 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ matrix.os }}-cargo-
 
       - name: Build
         run: cargo build --verbose
@@ -33,7 +42,9 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
+      # Tarpaulin (coverage) only runs on Linux
       - name: Check coverage
+        if: matrix.os == 'ubuntu-latest'
         run: |
           which cargo-tarpaulin || cargo install cargo-tarpaulin
           cargo tarpaulin
