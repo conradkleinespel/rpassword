@@ -1,10 +1,18 @@
 {pkgs ? import <nixpkgs> {}}:
 pkgs.mkShell {
-  buildInputs = with pkgs; [
+  nativeBuildInputs = with pkgs; [
+    cargo-tarpaulin
     rustup
+    pkgsCross.mingwW64.stdenv.cc
+    wineWowPackages.stable
+  ];
+  buildInputs = with pkgs; [
+    pkgsCross.mingwW64.windows.pthreads
   ];
   shellHook = ''
     rustup default stable
     rustup component add rust-src
+    rustup target add x86_64-unknown-linux-gnu
+    rustup target add x86_64-pc-windows-gnu
   '';
 }
