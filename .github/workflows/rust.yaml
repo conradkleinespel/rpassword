@@ -17,11 +17,19 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
+      - name: Install Emscripten for WASM tests
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y emscripten
+
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-emscripten
 
       # Cache cargo dependencies
       - uses: actions/cache@v4
@@ -41,6 +49,14 @@ jobs:
 
       - name: Run tests
         run: cargo test --verbose
+
+      - name: Build
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo build --verbose --target wasm32-unknown-emscripten
+
+      - name: Run tests
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --verbose --target wasm32-unknown-emscripten
 
       # Tarpaulin (coverage) only runs on Linux
       - name: Check coverage
