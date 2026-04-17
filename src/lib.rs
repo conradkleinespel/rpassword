@@ -56,15 +56,17 @@ impl Default for PasswordFeedback {
 }
 
 /// Configuration for prompting and reading a password.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Config {
     pub feedback: PasswordFeedback,
+    pub(crate) input_path: Option<String>,
 }
 
 /// A builder for creating a [`Config`].
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ConfigBuilder {
     feedback: PasswordFeedback,
+    input_path: Option<String>,
 }
 
 impl ConfigBuilder {
@@ -74,13 +76,27 @@ impl ConfigBuilder {
 
     /// Sets the visual feedback for the password.
     pub fn password_feedback(self, feedback: PasswordFeedback) -> ConfigBuilder {
-        ConfigBuilder { feedback }
+        ConfigBuilder {
+            feedback,
+            ..self
+        }
+    }
+
+    /// Sets the path to the TTY device.
+    ///
+    /// This can also be used to pass a temporary file for testing.
+    pub fn input_path(self, path: String) -> ConfigBuilder {
+        ConfigBuilder {
+            input_path: Some(path),
+            ..self
+        }
     }
 
     /// Builds the final [`Config`].
     pub fn build(self) -> Config {
         Config {
             feedback: self.feedback,
+            input_path: self.input_path,
         }
     }
 }
@@ -263,16 +279,17 @@ mod unix {
     }
 
     impl RawModeInput {
-        fn new(password_feedback: PasswordFeedback) -> io::Result<RawModeInput> {
+        fn new(config: Config) -> io::Result<RawModeInput> {
+            let tty_path = config.input_path.as_deref().unwrap_or("/dev/tty");
             let tty = std::fs::OpenOptions::new()
                 .read(true)
                 .write(true)
-                .open("/dev/tty")?;
+                .open(tty_path)?;
             let fd = tty.as_raw_fd();
             Ok(RawModeInput {
                 tty,
                 fd,
-                password_feedback,
+                password_feedback: config.feedback,
             })
         }
 
@@ -402,7 +419,7 @@ mod unix {
 
     /// Reads a password from TTY using the given config
     pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
-        let mut raw_mode_input = RawModeInput::new(config.feedback)?;
+        let mut raw_mode_input = RawModeInput::new(config)?;
         raw_mode_input.read_password()
     }
 
@@ -417,12 +434,12 @@ mod windows {
     use super::{Config, FeedbackState, PasswordFeedback};
     use std::io::{self, Write};
     use std::os::windows::io::FromRawHandle;
-    use windows_sys::core::PCSTR;
+    use windows_sys::core::w;
     use windows_sys::Win32::Foundation::{
         GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
     };
     use windows_sys::Win32::Storage::FileSystem::{
-        CreateFileA, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+        CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
     use windows_sys::Win32::System::Console::{
         GetConsoleMode, ReadConsoleW, SetConsoleMode, CONSOLE_MODE,
@@ -476,11 +493,22 @@ mod windows {
         password_feedback: PasswordFeedback,
     }
 
+    impl Drop for RawModeInput {
+        fn drop(&mut self) {
+            unsafe {
+                windows_sys::Win32::Foundation::CloseHandle(self.input_handle);
+            }
+        }
+    }
+
     impl RawModeInput {
-        fn new(password_feedback: PasswordFeedback) -> io::Result<RawModeInput> {
+        fn new(config: Config) -> io::Result<RawModeInput> {
+            let path_wide: Vec<u16> = config.input_path
+                .map(|p| p.encode_utf16().chain(std::iter::once(0)).collect())
+                .unwrap_or("CONIN$".encode_utf16().chain(std::iter::once(0)).collect());
             let input_handle = unsafe {
-                CreateFileA(
-                    b"CONIN$\x00".as_ptr() as PCSTR,
+                CreateFileW(
+                    path_wide.as_ptr(),
                     GENERIC_READ | GENERIC_WRITE,
                     FILE_SHARE_READ | FILE_SHARE_WRITE,
                     std::ptr::null(),
@@ -493,7 +521,10 @@ mod windows {
                 return Err(std::io::Error::last_os_error());
             }
 
-            Ok(RawModeInput { input_handle, password_feedback })
+            Ok(RawModeInput {
+                input_handle,
+                password_feedback: config.feedback,
+            })
         }
 
         /// Reads a password from TTY using the given config
@@ -502,8 +533,8 @@ mod windows {
             raw_mode_input_configuration.apply()?;
 
             let output_handle = unsafe {
-                CreateFileA(
-                    b"CONOUT$\x00".as_ptr() as PCSTR,
+                CreateFileW(
+                    w!("CONOUT$"),
                     GENERIC_READ | GENERIC_WRITE,
                     FILE_SHARE_READ | FILE_SHARE_WRITE,
                     std::ptr::null(),
@@ -673,7 +704,7 @@ mod windows {
 
     /// Reads a password from TTY using the given config
     pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
-        let raw_mode_input = RawModeInput::new(config.feedback)?;
+        let raw_mode_input = RawModeInput::new(config)?;
         raw_mode_input.read_password()
     }
 
@@ -823,3 +854,49 @@ mod tests {
             assert_eq!(state.into_password(), "ab");
         }
     }
+
+    #[test]
+    #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
+    fn test_read_password_with_config() {
+        use std::io::Write;
+        let mut temp_file = tempfile::NamedTempFile::new().unwrap();
+        temp_file.write_all(b"password\n").unwrap();
+        let path = temp_file.path().to_str().unwrap().to_string();
+
+        let config = ConfigBuilder::new()
+            .input_path(path)
+            .build();
+
+        // This should fail because it's not a TTY (tcgetattr fails on regular files)
+        // But it proves that read_password_with_config is using our input path.
+        let result = read_password_with_config(config);
+        assert!(result.is_err());
+
+        // On Linux, tcgetattr on a regular file returns ENOTTY (Inappropriate ioctl for device)
+        let err = result.unwrap_err();
+        assert_eq!(err.raw_os_error(), Some(libc::ENOTTY));
+    }
+
+    #[test]
+    #[cfg(target_family = "windows")]
+    fn test_read_password_with_config_windows() {
+        use std::io::Write;
+        let mut temp_file = tempfile::NamedTempFile::new().unwrap();
+        temp_file.write_all(b"password\r\n").unwrap();
+        let path = temp_file.path().to_str().unwrap().to_string();
+
+        let config = ConfigBuilder::new()
+            .input_path(path)
+            .build();
+
+        // This should fail because it's not a Console (GetConsoleMode fails on regular files)
+        // But, it proves that read_password_with_config is using our input path.
+        let result = read_password_with_config(config);
+        assert!(result.is_err());
+
+        // On Windows, GetConsoleMode on a regular file returns ERROR_INVALID_HANDLE
+        const ERROR_INVALID_HANDLE: i32 = 6;
+        let err = result.unwrap_err();
+        assert_eq!(err.raw_os_error(), Some(ERROR_INVALID_HANDLE));
+    }
+}
