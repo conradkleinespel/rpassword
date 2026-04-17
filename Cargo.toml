@@ -21,3 +21,6 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_
 
 [dependencies]
 rtoolbox = "0.0"
+
+[dev-dependencies]
+tempfile = "3"
