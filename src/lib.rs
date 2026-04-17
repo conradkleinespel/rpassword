@@ -223,6 +223,10 @@ mod unix {
         Ok(unsafe { term.assume_init() })
     }
 
+    fn safe_tcsetattr(fd: c_int, term: &mut termios) -> std::io::Result<()> {
+        io_result(unsafe {tcsetattr(fd, TCSANOW, term)})
+    }
+
     struct RawModeInputConfiguration {
         fd: i32,
         term_orig: termios,
@@ -241,7 +245,7 @@ mod unix {
             term.c_lflag &= !(ECHO | ICANON | ECHONL | ISIG);
             term.c_cc[VMIN] = 1;
             term.c_cc[VTIME] = 0;
-            io_result(unsafe { tcsetattr(self.fd, TCSANOW, &term) })
+            safe_tcsetattr(self.fd, &mut term)
         }
     }
 
