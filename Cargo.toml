@@ -9,8 +9,8 @@ repository = "https://github.com/conradkleinespel/rpassword"
 documentation = "https://docs.rs/rpassword/"
 readme = "README.md"
 keywords = ["read", "password", "security", "pass", "getpass"]
-edition = "2021"
-rust-version = "1.64"
+edition = "2024"
+rust-version = "1.85"
 exclude = ["rpassword.png"]
 
 [target.'cfg(unix)'.dependencies]
