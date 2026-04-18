@@ -99,15 +99,17 @@ impl ConfigBuilder {
 #[cfg(not(target_family = "wasm"))]
 struct FeedbackState {
     password: SafeString,
+    needs_terminal_configuration: bool,
     displayed_count: usize,
     feedback: PasswordFeedback,
 }
 
 #[cfg(not(target_family = "wasm"))]
 impl FeedbackState {
-    fn new(feedback: PasswordFeedback) -> Self {
+    fn new(feedback: PasswordFeedback, needs_terminal_configuration: bool) -> Self {
         FeedbackState {
             password: SafeString::new(),
+            needs_terminal_configuration,
             displayed_count: 0,
             feedback,
         }
@@ -115,6 +117,11 @@ impl FeedbackState {
 
     fn push_char(&mut self, c: char) -> Vec<u8> {
         self.password.push(c);
+
+        if !self.needs_terminal_configuration {
+            return Vec::new();
+        }
+
         match self.feedback {
             PasswordFeedback::Hide => Vec::new(),
             PasswordFeedback::Mask(mask) => {
@@ -138,6 +145,10 @@ impl FeedbackState {
             let new_len = self.password.len() - c.len_utf8();
             self.password.truncate(new_len);
 
+            if !self.needs_terminal_configuration {
+                return Vec::new();
+            }
+
             if self.displayed_count > 0 {
                 self.displayed_count -= 1;
                 vec![0x08, b' ', 0x08]
@@ -150,10 +161,34 @@ impl FeedbackState {
     }
 
     fn clear(&mut self) -> Vec<u8> {
-        let count = self.displayed_count;
         self.password = SafeString::new();
+
+        if !self.needs_terminal_configuration {
+            return Vec::new();
+        }
+
+        let count = self.displayed_count;
         self.displayed_count = 0;
         [0x08u8, b' ', 0x08].repeat(count)
+    }
+
+    fn abort(&mut self) -> Vec<u8> {
+        self.password = SafeString::new();
+
+        if !self.needs_terminal_configuration {
+            return Vec::new();
+        }
+
+        self.displayed_count = 0;
+        [b'\n'].to_vec()
+    }
+
+    fn finish(&mut self) -> Vec<u8> {
+        if !self.needs_terminal_configuration {
+            return Vec::new();
+        }
+
+        [b'\n'].to_vec()
     }
 
     fn is_empty(&self) -> bool {
@@ -296,7 +331,7 @@ mod unix {
                 self.apply_terminal_configuration()?;
             }
 
-            let mut state = FeedbackState::new(self.password_feedback);
+            let mut state = FeedbackState::new(self.password_feedback, self.needs_terminal_configuration);
             let mut byte = [0u8; 1];
 
             loop {
@@ -308,8 +343,11 @@ mod unix {
                 match byte[0] {
                     // LF / CR (Enter)
                     b'\n' | b'\r' => {
-                        self.tty.write_all(b"\n")?;
-                        self.tty.flush()?;
+                        let output = state.finish();
+                        if !output.is_empty() {
+                            self.tty.write_all(&output)?;
+                            self.tty.flush()?;
+                        }
                         break;
                     }
                     // Backspace / DEL
@@ -330,8 +368,11 @@ mod unix {
                     }
                     // Ctrl-C: interrupt
                     CTRL_C => {
-                        self.tty.write_all(b"\n")?;
-                        self.tty.flush()?;
+                        let output = state.abort();
+                        if !output.is_empty() {
+                            self.tty.write_all(&output)?;
+                            self.tty.flush()?;
+                        }
                         unsafe {
                             libc::raise(libc::SIGINT);
                         }
@@ -474,7 +515,7 @@ mod windows {
         unsafe {
             if ReadFile(
                 handle,
-                buf_bytes1.as_mut_ptr() as *mut u8,
+                buf_bytes1.as_mut_ptr(),
                 buf_bytes1.len() as u32,
                 &mut bytes_read1,
                 std::ptr::null_mut(),
@@ -501,7 +542,7 @@ mod windows {
             unsafe {
                 if ReadFile(
                     handle,
-                    buf_bytes2.as_mut_ptr() as *mut u8,
+                    buf_bytes2.as_mut_ptr(),
                     buf_bytes2.len() as u32,
                     &mut bytes_read2,
                     std::ptr::null_mut(),
@@ -650,7 +691,7 @@ mod windows {
 
             let mut out_stream = unsafe { std::fs::File::from_raw_handle(self.output_handle as _) };
 
-            let mut state = FeedbackState::new(self.password_feedback);
+            let mut state = FeedbackState::new(self.password_feedback, self.needs_terminal_configuration);
 
             loop {
                 let (wchar, chars_read) = read_utf16_char_from_handle(self.input_handle, self.needs_terminal_configuration)?;
@@ -685,8 +726,11 @@ mod windows {
                 match c {
                     // LF / CR (Enter)
                     '\n' | '\r' => {
-                        out_stream.write_all(b"\n")?;
-                        out_stream.flush()?;
+                        let output = state.finish();
+                        if !output.is_empty() {
+                            out_stream.write_all(&output)?;
+                            out_stream.flush()?;
+                        }
                         break;
                     }
                     // Backspace / DEL
@@ -707,8 +751,11 @@ mod windows {
                     }
                     // Ctrl-C: interrupt
                     CTRL_C => {
-                        out_stream.write_all(b"\n")?;
-                        out_stream.flush()?;
+                        let output = state.abort();
+                        if !output.is_empty() {
+                            out_stream.write_all(&output)?;
+                            out_stream.flush()?;
+                        }
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::Interrupted,
                             "interrupted",
@@ -860,69 +907,176 @@ mod tests {
 
     #[cfg(not(target_family = "wasm"))]
     mod feedback_state_tests {
-        use crate::{FeedbackState, PasswordFeedback};
+        mod with_terminal_configuration {
+            use crate::{FeedbackState, PasswordFeedback};
 
-        #[test]
-        fn feedback_state_mask_star() {
-            let mut state = FeedbackState::new(PasswordFeedback::Mask('*'));
-            assert_eq!(state.push_char('a'), b"*");
-            assert_eq!(state.push_char('b'), b"*");
-            assert_eq!(state.push_char('c'), b"*");
-            assert_eq!(state.pop_char(), vec![0x08, b' ', 0x08]);
-            assert_eq!(state.into_password(), "ab");
+            #[test]
+            fn feedback_state_mask_star() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), true);
+                assert_eq!(state.push_char('a'), b"*");
+                assert_eq!(state.push_char('b'), b"*");
+                assert_eq!(state.push_char('c'), b"*");
+                assert_eq!(state.pop_char(), vec![0x08, b' ', 0x08]);
+                assert_eq!(state.into_password(), "ab");
+            }
+
+            #[test]
+            fn feedback_state_mask_hash() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('#'), true);
+                assert_eq!(state.push_char('x'), b"#");
+                assert_eq!(state.push_char('y'), b"#");
+                assert_eq!(state.into_password(), "xy");
+            }
+
+            #[test]
+            fn feedback_state_hide() {
+                let mut state = FeedbackState::new(PasswordFeedback::Hide, true);
+                assert!(state.push_char('a').is_empty());
+                assert!(state.push_char('b').is_empty());
+                assert!(state.pop_char().is_empty());
+                assert_eq!(state.into_password(), "a");
+            }
+
+            #[test]
+            fn feedback_state_partial_mask() {
+                let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 3), true);
+                assert_eq!(state.push_char('a'), b"a");
+                assert_eq!(state.push_char('b'), b"b");
+                assert_eq!(state.push_char('c'), b"c");
+                assert_eq!(state.push_char('d'), b"*");
+                assert_eq!(state.push_char('e'), b"*");
+                assert_eq!(state.into_password(), "abcde");
+            }
+
+            #[test]
+            fn feedback_state_backspace_empty() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), true);
+                assert!(state.pop_char().is_empty());
+            }
+
+            #[test]
+            fn feedback_state_clear() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), true);
+                state.push_char('a');
+                state.push_char('b');
+                state.push_char('c');
+                assert_eq!(state.clear(), [0x08u8, b' ', 0x08].repeat(3));
+                assert!(state.is_empty());
+            }
+
+            #[test]
+            fn feedback_state_abort() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), true);
+                state.push_char('a');
+                state.push_char('b');
+                state.push_char('c');
+                assert_eq!(state.abort(), [b'\n']);
+                assert!(state.is_empty());
+            }
+
+            #[test]
+            fn feedback_state_finish() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), true);
+                state.push_char('a');
+                state.push_char('b');
+                state.push_char('c');
+                assert_eq!(state.finish(), [b'\n']);
+                assert_eq!(state.into_password(), "abc");
+            }
+
+            #[test]
+            fn feedback_state_partial_mask_zero() {
+                let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 0), true);
+                assert_eq!(state.push_char('a'), b"*");
+                assert_eq!(state.push_char('b'), b"*");
+                assert_eq!(state.into_password(), "ab");
+            }
         }
 
-        #[test]
-        fn feedback_state_mask_hash() {
-            let mut state = FeedbackState::new(PasswordFeedback::Mask('#'));
-            assert_eq!(state.push_char('x'), b"#");
-            assert_eq!(state.push_char('y'), b"#");
-            assert_eq!(state.into_password(), "xy");
-        }
+        mod without_terminal_configuration {
+            use crate::{FeedbackState, PasswordFeedback};
 
-        #[test]
-        fn feedback_state_hide() {
-            let mut state = FeedbackState::new(PasswordFeedback::Hide);
-            assert!(state.push_char('a').is_empty());
-            assert!(state.push_char('b').is_empty());
-            assert!(state.pop_char().is_empty());
-            assert_eq!(state.into_password(), "a");
-        }
+            #[test]
+            fn feedback_state_mask_star() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), false);
+                assert_eq!(state.push_char('a'), vec![]);
+                assert_eq!(state.push_char('b'), vec![]);
+                assert_eq!(state.push_char('c'), vec![]);
+                assert_eq!(state.pop_char(), vec![]);
+                assert_eq!(state.into_password(), "ab");
+            }
 
-        #[test]
-        fn feedback_state_partial_mask() {
-            let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 3));
-            assert_eq!(state.push_char('a'), b"a");
-            assert_eq!(state.push_char('b'), b"b");
-            assert_eq!(state.push_char('c'), b"c");
-            assert_eq!(state.push_char('d'), b"*");
-            assert_eq!(state.push_char('e'), b"*");
-            assert_eq!(state.into_password(), "abcde");
-        }
+            #[test]
+            fn feedback_state_mask_hash() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('#'), false);
+                assert_eq!(state.push_char('x'), vec![]);
+                assert_eq!(state.push_char('y'), vec![]);
+                assert_eq!(state.into_password(), "xy");
+            }
 
-        #[test]
-        fn feedback_state_backspace_empty() {
-            let mut state = FeedbackState::new(PasswordFeedback::Mask('*'));
-            assert!(state.pop_char().is_empty());
-        }
+            #[test]
+            fn feedback_state_hide() {
+                let mut state = FeedbackState::new(PasswordFeedback::Hide, false);
+                assert!(state.push_char('a').is_empty());
+                assert!(state.push_char('b').is_empty());
+                assert!(state.pop_char().is_empty());
+                assert_eq!(state.into_password(), "a");
+            }
 
-        #[test]
-        fn feedback_state_clear() {
-            let mut state = FeedbackState::new(PasswordFeedback::Mask('*'));
-            state.push_char('a');
-            state.push_char('b');
-            state.push_char('c');
-            let erase = state.clear();
-            assert_eq!(erase, [0x08u8, b' ', 0x08].repeat(3));
-            assert!(state.is_empty());
-        }
+            #[test]
+            fn feedback_state_partial_mask() {
+                let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 3), false);
+                assert_eq!(state.push_char('a'), vec![]);
+                assert_eq!(state.push_char('b'), vec![]);
+                assert_eq!(state.push_char('c'), vec![]);
+                assert_eq!(state.push_char('d'), vec![]);
+                assert_eq!(state.push_char('e'), vec![]);
+                assert_eq!(state.into_password(), "abcde");
+            }
 
-        #[test]
-        fn feedback_state_partial_mask_zero() {
-            let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 0));
-            assert_eq!(state.push_char('a'), b"*");
-            assert_eq!(state.push_char('b'), b"*");
-            assert_eq!(state.into_password(), "ab");
+            #[test]
+            fn feedback_state_backspace_empty() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), false);
+                assert!(state.pop_char().is_empty());
+            }
+
+            #[test]
+            fn feedback_state_clear() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), false);
+                state.push_char('a');
+                state.push_char('b');
+                state.push_char('c');
+                assert_eq!(state.clear(), vec![]);
+                assert!(state.is_empty());
+            }
+
+            #[test]
+            fn feedback_state_abort() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), false);
+                state.push_char('a');
+                state.push_char('b');
+                state.push_char('c');
+                assert_eq!(state.abort(), vec![]);
+                assert!(state.is_empty());
+            }
+
+            #[test]
+            fn feedback_state_finish() {
+                let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), false);
+                state.push_char('a');
+                state.push_char('b');
+                state.push_char('c');
+                assert_eq!(state.finish(), vec![]);
+                assert_eq!(state.into_password(), "abc");
+            }
+
+            #[test]
+            fn feedback_state_partial_mask_zero() {
+                let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 0), false);
+                assert_eq!(state.push_char('a'), vec![]);
+                assert_eq!(state.push_char('b'), vec![]);
+                assert_eq!(state.into_password(), "ab");
+            }
         }
     }
 
@@ -938,13 +1092,17 @@ mod tests {
             let path = temp_file.path().to_str().unwrap().to_string();
 
             let config = ConfigBuilder::new()
-                .input_path(path)
+                .input_path(path.clone())
                 .build();
 
             // This should fail because it's not a TTY (tcgetattr fails on regular files)
             // But it proves that read_password_with_config is using our input path.
             let result = read_password_with_config(config);
             assert_eq!("password", result.unwrap());
+
+            // Check that no content was written to the file because it is not a TTY
+            let file_content = std::fs::read_to_string(path).unwrap();
+            assert_eq!("password\n", file_content);
         }
 
         #[test]
@@ -968,7 +1126,7 @@ mod tests {
     mod windows {
         use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND};
         use crate::{read_password_with_config, ConfigBuilder};
-        use std::io::Write;
+        use std::io::{Read, Write};
 
         #[test]
         fn test_read_password_with_config() {
