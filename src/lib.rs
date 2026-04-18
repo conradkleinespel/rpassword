@@ -35,10 +35,11 @@ use std::fmt::Debug;
 use std::io::{BufRead, Write};
 
 /// Controls visual feedback when the user types a password.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum PasswordFeedback {
     /// Show nothing while typing (current default behavior).
+    #[default]
     Hide,
     /// Show the given mask char for every character typed.
     /// e.g. `Mask('*')` shows stars.
@@ -47,12 +48,6 @@ pub enum PasswordFeedback {
     /// mask char for the rest.
     /// e.g. `PartialMask('*', 3)` shows first 3 chars in plaintext, then stars.
     PartialMask(char, usize),
-}
-
-impl Default for PasswordFeedback {
-    fn default() -> Self {
-        PasswordFeedback::Hide
-    }
 }
 
 /// Configuration for prompting and reading a password.
