@@ -1,6 +1,9 @@
 use rpassword::prompt_password;
 
 fn main() {
-    let password = prompt_password("Password: ").unwrap();
-    println!("The password is: {}", password);
+    println!("=== prompt_password() ===");
+    match prompt_password("Password: ") {
+        Ok(pass) => println!("You entered: {}", pass),
+        Err(e) => eprintln!("Error: {}", e),
+    }
 }
