@@ -1,7 +1,7 @@
 use rpassword::{ConfigBuilder, PasswordFeedback};
 
 fn main() {
-    println!("=== Hide mode (default behavior) ===");
+    println!("=== prompt_password_with_config(...) with Hide mode (default behavior) ===");
     let config = ConfigBuilder::new()
         .password_feedback(PasswordFeedback::Hide)
         .build();
@@ -10,7 +10,7 @@ fn main() {
         Err(e) => eprintln!("Error: {}", e),
     }
 
-    println!("\n=== Mask('*') mode ===");
+    println!("\n=== prompt_password_with_config(...) with Mask('*') mode ===");
     let config = ConfigBuilder::new()
         .password_feedback(PasswordFeedback::Mask('*'))
         .build();
@@ -19,7 +19,7 @@ fn main() {
         Err(e) => eprintln!("Error: {}", e),
     }
 
-    println!("\n=== Mask('#') mode ===");
+    println!("\n=== prompt_password_with_config(...) with Mask('#') mode ===");
     let config = ConfigBuilder::new()
         .password_feedback(PasswordFeedback::Mask('#'))
         .build();
@@ -28,7 +28,7 @@ fn main() {
         Err(e) => eprintln!("Error: {}", e),
     }
 
-    println!("\n=== PartialMask('*', 3) mode ===");
+    println!("\n=== prompt_password_with_config(...) with PartialMask('*', 3) mode ===");
     let config = ConfigBuilder::new()
         .password_feedback(PasswordFeedback::PartialMask('*', 3))
         .build();
