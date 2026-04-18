@@ -210,7 +210,7 @@ mod wasm {
 
 #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
 mod unix {
-    use libc::{c_int, tcsetattr, termios, ECHO, ECHONL, ICANON, ISIG, TCSANOW, VMIN, VTIME};
+    use libc::{c_int, isatty, tcsetattr, termios, ECHO, ECHONL, ICANON, ISIG, TCSANOW, VMIN, VTIME};
     use super::{Config, FeedbackState, PasswordFeedback};
     use std::fs::File;
     use std::io::{self, Write};
@@ -232,6 +232,12 @@ mod unix {
         }
     }
 
+    fn is_interactive_terminal(fd: c_int) -> bool {
+        unsafe {
+            isatty(fd) != 0
+        }
+    }
+
     fn safe_tcgetattr(fd: c_int) -> std::io::Result<termios> {
         let mut term = mem::MaybeUninit::<termios>::uninit();
         io_result(unsafe { ::libc::tcgetattr(fd, term.as_mut_ptr()) })?;
@@ -242,40 +248,22 @@ mod unix {
         io_result(unsafe {tcsetattr(fd, TCSANOW, term)})
     }
 
-    struct RawModeInputConfiguration {
-        fd: i32,
-        term_orig: termios,
-    }
-
-    impl RawModeInputConfiguration {
-        fn new(fd: i32) -> io::Result<Self> {
-            Ok(RawModeInputConfiguration {
-                fd,
-                term_orig: safe_tcgetattr(fd)?,
-            })
-        }
-
-        fn apply(&self) -> io::Result<()> {
-            let mut term = safe_tcgetattr(self.fd)?;
-            term.c_lflag &= !(ECHO | ICANON | ECHONL | ISIG);
-            term.c_cc[VMIN] = 1;
-            term.c_cc[VTIME] = 0;
-            safe_tcsetattr(self.fd, &mut term)
-        }
-    }
-
-    impl Drop for RawModeInputConfiguration {
-        fn drop(&mut self) {
-            unsafe {
-                tcsetattr(self.fd, TCSANOW, &self.term_orig);
-            }
-        }
-    }
-
     struct RawModeInput {
         tty: File,
         fd: i32,
+        term_orig: Option<termios>,
+        needs_terminal_configuration: bool,
         password_feedback: PasswordFeedback,
+    }
+
+    impl Drop for RawModeInput {
+        fn drop(&mut self) {
+            if let Some(ref mut term_orig) = self.term_orig {
+                unsafe {
+                    tcsetattr(self.fd, TCSANOW, term_orig);
+                }
+            }
+        }
     }
 
     impl RawModeInput {
@@ -286,16 +274,32 @@ mod unix {
                 .write(true)
                 .open(tty_path)?;
             let fd = tty.as_raw_fd();
+            let is_a_tty = is_interactive_terminal(fd);
             Ok(RawModeInput {
                 tty,
                 fd,
+                term_orig: if is_a_tty { Some(safe_tcgetattr(fd)?) } else { None },
+                needs_terminal_configuration: is_a_tty,
                 password_feedback: config.feedback,
             })
         }
 
+        fn apply_terminal_configuration(&mut self) -> io::Result<()> {
+            if !self.needs_terminal_configuration {
+                panic!("apply_terminal_configuration called on non-TTY");
+            }
+
+            let mut term = safe_tcgetattr(self.fd)?;
+            term.c_lflag &= !(ECHO | ICANON | ECHONL | ISIG);
+            term.c_cc[VMIN] = 1;
+            term.c_cc[VTIME] = 0;
+            safe_tcsetattr(self.fd, &mut term)
+        }
+
         fn read_password(&mut self) -> std::io::Result<String> {
-            let raw_mode_input_configuration = RawModeInputConfiguration::new(self.fd)?;
-            raw_mode_input_configuration.apply()?;
+            if self.needs_terminal_configuration {
+                self.apply_terminal_configuration()?;
+            }
 
             let mut state = FeedbackState::new(self.password_feedback);
             let mut byte = [0u8; 1];
@@ -434,12 +438,11 @@ mod windows {
     use super::{Config, FeedbackState, PasswordFeedback};
     use std::io::{self, Write};
     use std::os::windows::io::FromRawHandle;
-    use windows_sys::core::w;
     use windows_sys::Win32::Foundation::{
         GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
     };
     use windows_sys::Win32::Storage::FileSystem::{
-        CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+        CreateFileW, ReadFile, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
     use windows_sys::Win32::System::Console::{
         GetConsoleMode, ReadConsoleW, SetConsoleMode, CONSOLE_MODE,
@@ -453,62 +456,141 @@ mod windows {
     const CTRL_U: char = '\x15';
     const ESC: char = '\x1B';
 
-    struct RawModeInputConfiguration {
-        mode: u32,
-        handle: HANDLE,
+    fn is_interactive_terminal(handle: windows_sys::Win32::Foundation::HANDLE) -> bool {
+        let mut mode: CONSOLE_MODE = 0;
+        unsafe {
+            // Try to get the console mode. If it succeeds, the handle is a console handle.
+            GetConsoleMode(handle, &mut mode) != 0
+        }
     }
 
-    impl RawModeInputConfiguration {
-        fn new(handle: HANDLE) -> io::Result<Self> {
-            let mut mode = 0;
+    fn get_console_mode(handle: HANDLE) -> io::Result<u32> {
+        let mut mode: CONSOLE_MODE = 0;
+        if unsafe { GetConsoleMode(handle, &mut mode as *mut CONSOLE_MODE) } == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(mode)
+    }
 
-            if unsafe { GetConsoleMode(handle, &mut mode as *mut CONSOLE_MODE) } == 0 {
-                return Err(std::io::Error::last_os_error());
-            }
+    fn read_utf16_or_ascii_from_file(handle: windows_sys::Win32::Foundation::HANDLE) -> io::Result<(u16, u32)> {
+        let mut buf_bytes1: [u8; 1] = [0];
+        let mut bytes_read1: u32 = 0;
 
-            Ok(RawModeInputConfiguration {
+        unsafe {
+            if ReadFile(
                 handle,
-                mode,
-            })
+                buf_bytes1.as_mut_ptr() as *mut u8,
+                buf_bytes1.len() as u32,
+                &mut bytes_read1,
+                std::ptr::null_mut(),
+            ) == 0 {
+                return Err(io::Error::last_os_error());
+            }
         }
 
-        fn apply(&self) -> io::Result<()> {
-            if unsafe { SetConsoleMode(self.handle, ENABLE_PROCESSED_INPUT) } == 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
+        // If no bytes were read, return None (EOF)
+        if bytes_read1 == 0 {
+            return Ok((0, bytes_read1));
         }
+
+        // If the byte is ASCII (0x00-0x7F), return it as a u16
+        if buf_bytes1[0] <= 0x7F {
+            return Ok((buf_bytes1[0] as u16, bytes_read1));
+        }
+
+        // If the byte is the first byte of a UTF-16 character (0xC0-0xFF), read the next byte
+        if buf_bytes1[0] >= 0xC0 {
+            let mut buf_bytes2: [u8; 1] = [0];
+            let mut bytes_read2: u32 = 0;
+
+            unsafe {
+                if ReadFile(
+                    handle,
+                    buf_bytes2.as_mut_ptr() as *mut u8,
+                    buf_bytes2.len() as u32,
+                    &mut bytes_read2,
+                    std::ptr::null_mut(),
+                ) == 0 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+
+            if bytes_read2 == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Incomplete UTF-16 character",
+                ));
+            }
+
+            // Combine the two bytes into a u16
+            let utf16_char = u16::from_le_bytes([buf_bytes1[0], buf_bytes2[0]]);
+            return Ok((utf16_char, bytes_read1 + bytes_read2));
+        }
+
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid UTF-16 or ASCII character",
+        ))
     }
 
-    impl Drop for RawModeInputConfiguration {
-        fn drop(&mut self) {
-            unsafe {
-                SetConsoleMode(self.handle, self.mode);
+    fn read_utf16_char_from_handle(handle: HANDLE, is_a_tty: bool) -> io::Result<(u16,u32)> {
+        if is_a_tty {
+            let mut buf: [u16; 1] = [0];
+            let mut chars_read: u32 = 0;
+            if unsafe {
+                ReadConsoleW(
+                    handle,
+                    buf.as_mut_ptr() as *mut std::ffi::c_void,
+                    1,
+                    &mut chars_read,
+                    std::ptr::null(),
+                )
+            } == 0
+            {
+                return Err(std::io::Error::last_os_error());
             }
+            return Ok((buf[0], chars_read));
         }
+
+        read_utf16_or_ascii_from_file(handle)
     }
 
     struct RawModeInput {
         input_handle: HANDLE,
+        output_handle: HANDLE,
+        input_mode: u32,
+        output_mode: u32,
+        needs_terminal_configuration: bool,
         password_feedback: PasswordFeedback,
     }
 
     impl Drop for RawModeInput {
         fn drop(&mut self) {
             unsafe {
+                SetConsoleMode(self.input_handle, self.input_mode);
+            }
+            unsafe {
+                SetConsoleMode(self.output_handle, self.output_mode);
+            }
+            unsafe {
                 windows_sys::Win32::Foundation::CloseHandle(self.input_handle);
+            }
+            unsafe {
+                windows_sys::Win32::Foundation::CloseHandle(self.output_handle);
             }
         }
     }
 
     impl RawModeInput {
         fn new(config: Config) -> io::Result<RawModeInput> {
-            let path_wide: Vec<u16> = config.input_path
-                .map(|p| p.encode_utf16().chain(std::iter::once(0)).collect())
-                .unwrap_or("CONIN$".encode_utf16().chain(std::iter::once(0)).collect());
+            let path_wide: Option<Vec<u16>> = config.input_path
+                .map(|p| p.encode_utf16().chain(std::iter::once(0)).collect());
+
             let input_handle = unsafe {
                 CreateFileW(
-                    path_wide.as_ptr(),
+                    path_wide.clone()
+                        .unwrap_or("CONIN$".encode_utf16().chain(std::iter::once(0)).collect())
+                        .as_ptr(),
                     GENERIC_READ | GENERIC_WRITE,
                     FILE_SHARE_READ | FILE_SHARE_WRITE,
                     std::ptr::null(),
@@ -521,20 +603,11 @@ mod windows {
                 return Err(std::io::Error::last_os_error());
             }
 
-            Ok(RawModeInput {
-                input_handle,
-                password_feedback: config.feedback,
-            })
-        }
-
-        /// Reads a password from TTY using the given config
-        pub fn read_password(&self) -> std::io::Result<String> {
-            let raw_mode_input_configuration = RawModeInputConfiguration::new(self.input_handle)?;
-            raw_mode_input_configuration.apply()?;
-
             let output_handle = unsafe {
                 CreateFileW(
-                    w!("CONOUT$"),
+                    path_wide.clone()
+                        .unwrap_or("CONOUT$".encode_utf16().chain(std::iter::once(0)).collect())
+                        .as_ptr(),
                     GENERIC_READ | GENERIC_WRITE,
                     FILE_SHARE_READ | FILE_SHARE_WRITE,
                     std::ptr::null(),
@@ -547,50 +620,56 @@ mod windows {
                 return Err(std::io::Error::last_os_error());
             }
 
-            let mut out_stream = unsafe { std::fs::File::from_raw_handle(output_handle as _) };
+            let is_a_tty = is_interactive_terminal(input_handle);
+
+            Ok(RawModeInput {
+                input_handle,
+                output_handle,
+                input_mode: if is_a_tty {
+                    get_console_mode(input_handle)?
+                } else { 0 },
+                output_mode: if is_a_tty {
+                    get_console_mode(output_handle)?
+                } else { 0 },
+                needs_terminal_configuration: is_a_tty,
+                password_feedback: config.feedback,
+            })
+        }
+
+        fn apply_terminal_configuration(&mut self) -> io::Result<()> {
+            if !self.needs_terminal_configuration {
+                panic!("apply_terminal_configuration called on non-TTY");
+            }
+
+            if unsafe { SetConsoleMode(self.input_handle, ENABLE_PROCESSED_INPUT) } == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        }
+
+        /// Reads a password from TTY using the given config
+        pub fn read_password(&mut self) -> std::io::Result<String> {
+            if self.needs_terminal_configuration {
+                self.apply_terminal_configuration()?;
+            }
+
+            let mut out_stream = unsafe { std::fs::File::from_raw_handle(self.output_handle as _) };
 
             let mut state = FeedbackState::new(self.password_feedback);
 
             loop {
-                let mut buf: [u16; 1] = [0];
-                let mut chars_read: u32 = 0;
-                if unsafe {
-                    ReadConsoleW(
-                        self.input_handle,
-                        buf.as_mut_ptr() as *mut std::ffi::c_void,
-                        1,
-                        &mut chars_read,
-                        std::ptr::null(),
-                    )
-                } == 0
-                {
-                    return Err(std::io::Error::last_os_error());
-                }
+                let (wchar, chars_read) = read_utf16_char_from_handle(self.input_handle, self.needs_terminal_configuration)?;
                 if chars_read == 0 {
                     continue;
                 }
-
-                let wchar = buf[0];
 
                 // Handle UTF-16 surrogate pairs: characters above U+FFFF (e.g. emoji)
                 // are split across two u16 values — a high surrogate (0xD800..0xDBFF)
                 // followed by a low surrogate. Read the second half before decoding.
                 let c = if (0xD800..=0xDBFF).contains(&wchar) {
-                    let mut buf2: [u16; 1] = [0];
-                    let mut chars_read2: u32 = 0;
-                    if unsafe {
-                        ReadConsoleW(
-                            self.input_handle,
-                            buf2.as_mut_ptr() as *mut std::ffi::c_void,
-                            1,
-                            &mut chars_read2,
-                            std::ptr::null(),
-                        )
-                    } == 0
-                    {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    match char::decode_utf16([wchar, buf2[0]])
+                    let (wchar2, chars_read2) = read_utf16_char_from_handle(self.input_handle, self.needs_terminal_configuration)?;
+                    // TODO: check chars_read2 == 0, don't try to decode if it is
+                    match char::decode_utf16([wchar, wchar2])
                         .next()
                         .and_then(|r| r.ok())
                     {
@@ -651,40 +730,37 @@ mod windows {
                     }
                     // ESC: consume and discard escape sequence
                     ESC => {
-                        let mut buf3: [u16; 1] = [0];
-                        let mut chars_read3: u32 = 0;
-                        let ok = unsafe {
-                            ReadConsoleW(
-                                self.input_handle,
-                                buf3.as_mut_ptr() as *mut std::ffi::c_void,
-                                1,
-                                &mut chars_read3,
-                                std::ptr::null(),
-                            )
-                        } != 0;
-                        if ok && (buf3[0] == b'[' as u16 || buf3[0] == b'O' as u16) {
-                            // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
-                            loop {
-                                let mut buf4: [u16; 1] = [0];
-                                let mut chars_read4: u32 = 0;
-                                if unsafe {
-                                    ReadConsoleW(
-                                        self.input_handle,
-                                        buf4.as_mut_ptr() as *mut std::ffi::c_void,
-                                        1,
-                                        &mut chars_read4,
-                                        std::ptr::null(),
-                                    )
-                                } == 0
-                                {
-                                    break;
+                        match read_utf16_char_from_handle(self.input_handle, self.needs_terminal_configuration) {
+                            Ok((wchar3, chars_read3)) => {
+                                // TODO: check chars_read3 == 0, don't try to decode if it is
+                                if wchar3 == b'[' as u16 || wchar3 == b'O' as u16 {
+                                    // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
+                                    loop {
+                                        let mut buf4: [u16; 1] = [0];
+                                        let mut chars_read4: u32 = 0;
+                                        if unsafe {
+                                            ReadConsoleW(
+                                                self.input_handle,
+                                                buf4.as_mut_ptr() as *mut std::ffi::c_void,
+                                                1,
+                                                &mut chars_read4,
+                                                std::ptr::null(),
+                                            )
+                                        } == 0
+                                        {
+                                            break;
+                                        }
+                                        if (0x40..=0x7E).contains(&buf4[0]) {
+                                            break;
+                                        }
+                                    }
                                 }
-                                if (0x40..=0x7E).contains(&buf4[0]) {
-                                    break;
-                                }
+                                // Otherwise: 2-byte sequence (ESC + char), already consumed
+                            }
+                            Err(_) => {
+                                // TODO: Handle errors?
                             }
                         }
-                        // Otherwise: 2-byte sequence (ESC + char), already consumed
                     }
                     c if c >= ' ' && !c.is_control() => {
                         let output = state.push_char(c);
@@ -704,7 +780,7 @@ mod windows {
 
     /// Reads a password from TTY using the given config
     pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
-        let raw_mode_input = RawModeInput::new(config)?;
+        let mut raw_mode_input = RawModeInput::new(config)?;
         raw_mode_input.read_password()
     }
 
@@ -855,48 +931,77 @@ mod tests {
         }
     }
 
-    #[test]
     #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
-    fn test_read_password_with_config() {
+    mod unix {
+        use crate::{read_password_with_config, ConfigBuilder};
         use std::io::Write;
-        let mut temp_file = tempfile::NamedTempFile::new().unwrap();
-        temp_file.write_all(b"password\n").unwrap();
-        let path = temp_file.path().to_str().unwrap().to_string();
 
-        let config = ConfigBuilder::new()
-            .input_path(path)
-            .build();
+        #[test]
+        fn test_read_password_with_config() {
+            let mut temp_file = tempfile::NamedTempFile::new().unwrap();
+            temp_file.write_all(b"password\n").unwrap();
+            let path = temp_file.path().to_str().unwrap().to_string();
 
-        // This should fail because it's not a TTY (tcgetattr fails on regular files)
-        // But it proves that read_password_with_config is using our input path.
-        let result = read_password_with_config(config);
-        assert!(result.is_err());
+            let config = ConfigBuilder::new()
+                .input_path(path)
+                .build();
 
-        // On Linux, tcgetattr on a regular file returns ENOTTY (Inappropriate ioctl for device)
-        let err = result.unwrap_err();
-        assert_eq!(err.raw_os_error(), Some(libc::ENOTTY));
+            // This should fail because it's not a TTY (tcgetattr fails on regular files)
+            // But it proves that read_password_with_config is using our input path.
+            let result = read_password_with_config(config);
+            assert_eq!("password", result.unwrap());
+        }
+
+        #[test]
+        fn test_read_password_with_config_errors_with_file_not_found() {
+            let config = ConfigBuilder::new()
+                .input_path("/does/not/exist".to_string())
+                .build();
+
+            // This should fail because it's not a TTY (tcgetattr fails on regular files)
+            // But it proves that read_password_with_config is using our input path.
+            let result = read_password_with_config(config);
+            assert!(result.is_err());
+
+            // On Linux, tcgetattr on a regular file returns ENOTTY (Inappropriate ioctl for device)
+            let err = result.unwrap_err();
+            assert_eq!(err.raw_os_error(), Some(libc::ENOENT));
+        }
     }
 
-    #[test]
     #[cfg(target_family = "windows")]
-    fn test_read_password_with_config_windows() {
+    mod windows {
+        use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND};
+        use crate::{read_password_with_config, ConfigBuilder};
         use std::io::Write;
-        let mut temp_file = tempfile::NamedTempFile::new().unwrap();
-        temp_file.write_all(b"password\r\n").unwrap();
-        let path = temp_file.path().to_str().unwrap().to_string();
 
-        let config = ConfigBuilder::new()
-            .input_path(path)
-            .build();
+        #[test]
+        fn test_read_password_with_config() {
+            let mut temp_file = tempfile::NamedTempFile::new().unwrap();
+            temp_file.write_all(b"password\r\n").unwrap();
+            let path = temp_file.path().to_str().unwrap().to_string();
 
-        // This should fail because it's not a Console (GetConsoleMode fails on regular files)
-        // But, it proves that read_password_with_config is using our input path.
-        let result = read_password_with_config(config);
-        assert!(result.is_err());
+            let config = ConfigBuilder::new()
+                .input_path(path)
+                .build();
 
-        // On Windows, GetConsoleMode on a regular file returns ERROR_INVALID_HANDLE
-        const ERROR_INVALID_HANDLE: i32 = 6;
-        let err = result.unwrap_err();
-        assert_eq!(err.raw_os_error(), Some(ERROR_INVALID_HANDLE));
+            let result = read_password_with_config(config);
+            assert_eq!("password", result.unwrap());
+        }
+
+        #[test]
+        fn test_read_password_with_config_errors_with_file_not_found() {
+            let config = ConfigBuilder::new()
+                .input_path("C:\\not-found.txt".to_string())
+                .build();
+
+            // This should fail because it's not a Console (GetConsoleMode fails on regular files)
+            // But, it proves that read_password_with_config is using our input path.
+            let result = read_password_with_config(config);
+            assert!(result.is_err());
+
+            let err = result.unwrap_err();
+            assert_eq!(err.raw_os_error(), Some(ERROR_FILE_NOT_FOUND as i32));
+        }
     }
 }
