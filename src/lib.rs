@@ -13,18 +13,20 @@
 //! println!("Your password is {}", password);
 //! ```
 //!
-//! Finally, in unit tests, you might want to pass a `Cursor`, which implements `BufRead`. In that
-//! case, you can use `read_password_from_bufread` and `prompt_password_from_bufread`:
-//! ```
-//! use std::io::Cursor;
+//! For testing, you can use `read_password_with_config` and `prompt_password_with_config` with a temporary file:
+//! ```no_run
+//! use tempfile::NamedTempFile;
+//! use std::io::Write;
 //!
-//! let mut mock_input = Cursor::new("my-password\n".as_bytes().to_owned());
-//! let password = rpassword::read_password_from_bufread(&mut mock_input).unwrap();
-//! println!("Your password is {}", password);
+//! let mut temp_file = NamedTempFile::new().unwrap();
+//! temp_file.write_all(b"my-password\n").unwrap();
+//! let path = temp_file.path().to_str().unwrap().to_string();
 //!
-//! let mut mock_input = Cursor::new("my-password\n".as_bytes().to_owned());
-//! let mut mock_output = Cursor::new(Vec::new());
-//! let password = rpassword::prompt_password_from_bufread(&mut mock_input, &mut mock_output, "Your password: ").unwrap();
+//! let config = rpassword::ConfigBuilder::new()
+//!     .input_path(path)
+//!     .build();
+//!
+//! let password = rpassword::read_password_with_config(config).unwrap();
 //! println!("Your password is {}", password);
 //! ```
 
@@ -35,6 +37,35 @@ use std::fmt::Debug;
 use std::io::{BufRead, Write};
 
 /// Controls visual feedback when the user types a password.
+///
+/// # Examples
+///
+/// ## Using `PasswordFeedback::Mask` to show asterisks (`*`) while typing:
+/// ```
+/// use rpassword::{ConfigBuilder, PasswordFeedback};
+///
+/// let config = ConfigBuilder::new()
+///     .password_feedback(PasswordFeedback::Mask('*'))
+///     .build();
+/// ```
+///
+/// ## Using `PasswordFeedback::PartialMask` to show the first 3 characters in plaintext, then asterisks (`*`):
+/// ```
+/// use rpassword::{ConfigBuilder, PasswordFeedback};
+///
+/// let config = ConfigBuilder::new()
+///     .password_feedback(PasswordFeedback::PartialMask('*', 3))
+///     .build();
+/// ```
+///
+/// ## Using `PasswordFeedback::Hide` (default behavior):
+/// ```
+/// use rpassword::{ConfigBuilder, PasswordFeedback};
+///
+/// let config = ConfigBuilder::new()
+///     .password_feedback(PasswordFeedback::Hide)
+///     .build();
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum PasswordFeedback {
@@ -53,11 +84,44 @@ pub enum PasswordFeedback {
 /// Configuration for prompting and reading a password.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Config {
-    pub feedback: PasswordFeedback,
+    pub(crate) feedback: PasswordFeedback,
     pub(crate) input_path: Option<String>,
 }
 
 /// A builder for creating a [`Config`].
+///
+/// This struct provides a convenient way to configure the behavior of password reading,
+/// such as setting visual feedback and specifying an input path.
+///
+/// # Examples
+///
+/// ## Basic Usage
+/// ```
+/// use rpassword::{ConfigBuilder, PasswordFeedback};
+///
+/// let config = ConfigBuilder::new()
+///     .password_feedback(PasswordFeedback::Mask('*'))
+///     .build();
+/// ```
+///
+/// ## Setting a Custom Input Path
+/// ```
+/// use rpassword::ConfigBuilder;
+///
+/// let config = ConfigBuilder::new()
+///     .input_path("/dev/tty".to_string())
+///     .build();
+/// ```
+///
+/// ## Combining Feedback and Input Path
+/// ```
+/// use rpassword::{ConfigBuilder, PasswordFeedback};
+///
+/// let config = ConfigBuilder::new()
+///     .password_feedback(PasswordFeedback::PartialMask('*', 3))
+///     .input_path("/dev/tty".to_string())
+///     .build();
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct ConfigBuilder {
     feedback: PasswordFeedback,
@@ -1126,7 +1190,7 @@ mod tests {
     mod windows {
         use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND};
         use crate::{read_password_with_config, ConfigBuilder};
-        use std::io::{Read, Write};
+        use std::io::{Write};
 
         #[test]
         fn test_read_password_with_config() {
