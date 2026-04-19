@@ -907,7 +907,12 @@ mod windows {
                 // followed by a low surrogate. Read the second half before decoding.
                 let c = if (0xD800..=0xDBFF).contains(&wchar) {
                     let (wchar2, chars_read2) = read_utf16_char_from_handle(self.input_handle, self.needs_terminal_configuration)?;
-                    // TODO: check chars_read2 == 0, don't try to decode if it is
+                    if chars_read2 == 0 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Incomplete UTF-16 character",
+                        ));
+                    }
                     match char::decode_utf16([wchar, wchar2])
                         .next()
                         .and_then(|r| r.ok())
@@ -975,35 +980,23 @@ mod windows {
                     }
                     // ESC: consume and discard escape sequence
                     ESC => {
-                        match read_utf16_char_from_handle(self.input_handle, self.needs_terminal_configuration) {
-                            Ok((wchar3, chars_read3)) => {
-                                // TODO: check chars_read3 == 0, don't try to decode if it is
-                                if wchar3 == b'[' as u16 || wchar3 == b'O' as u16 {
-                                    // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
-                                    loop {
-                                        let mut buf4: [u16; 1] = [0];
-                                        let mut chars_read4: u32 = 0;
-                                        if unsafe {
-                                            ReadConsoleW(
-                                                self.input_handle,
-                                                buf4.as_mut_ptr() as *mut std::ffi::c_void,
-                                                1,
-                                                &mut chars_read4,
-                                                std::ptr::null(),
-                                            )
-                                        } == 0
-                                        {
-                                            break;
-                                        }
-                                        if (0x40..=0x7E).contains(&buf4[0]) {
-                                            break;
-                                        }
-                                    }
+                        let (wchar3, chars_read3) = read_utf16_char_from_handle(self.input_handle, self.needs_terminal_configuration)?;
+                        if chars_read3 == 0 {
+                            // EOF, ignore the incomplete escape sequence
+                            break;
+                        }
+
+                        if wchar3 == b'[' as u16 || wchar3 == b'O' as u16 {
+                            // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
+                            loop {
+                                let (wchar4, chars_read4) = read_utf16_char_from_handle(self.input_handle, self.needs_terminal_configuration)?;
+                                if chars_read4 == 0 {
+                                    // EOF, ignore the incomplete escape sequence
+                                    break;
                                 }
-                                // Otherwise: 2-byte sequence (ESC + char), already consumed
-                            }
-                            Err(_) => {
-                                // TODO: Handle errors?
+                                if (0x40..=0x7E).contains(&wchar4) {
+                                    break;
+                                }
                             }
                         }
                     }
