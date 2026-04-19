@@ -681,7 +681,26 @@ mod windows {
         Ok(mode)
     }
 
-    fn read_utf16_or_ascii_from_file(handle: windows_sys::Win32::Foundation::HANDLE) -> io::Result<(u16, u32)> {
+    fn open_file(path: &str) -> io::Result<HANDLE> {
+        let handle = unsafe {
+            CreateFileW(
+                path.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>().as_ptr(),
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                0,
+                INVALID_HANDLE_VALUE,
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        Ok(handle)
+    }
+
+    fn read_single_byte_from_file(handle: windows_sys::Win32::Foundation::HANDLE) -> io::Result<(u8, u32)> {
         let mut buf_bytes1: [u8; 1] = [0];
         let mut bytes_read1: u32 = 0;
 
@@ -697,33 +716,44 @@ mod windows {
             }
         }
 
-        // If no bytes were read, EOF
         if bytes_read1 == 0 {
-            return Ok((0, 0));
+            return Ok((0, 0))
         }
 
+        return Ok((buf_bytes1[0], bytes_read1));
+    }
+
+    fn read_single_char_from_console(handle: windows_sys::Win32::Foundation::HANDLE) -> io::Result<(u16, u32)> {
+        let mut buf: [u16; 1] = [0];
+        let mut chars_read: u32 = 0;
+        if unsafe {
+            ReadConsoleW(
+                handle,
+                buf.as_mut_ptr() as *mut std::ffi::c_void,
+                1,
+                &mut chars_read,
+                std::ptr::null(),
+            )
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        return Ok((buf[0], chars_read));
+    }
+
+    /// Read an UTF-16 char from a file
+    fn read_utf16_or_ascii_from_file(handle: windows_sys::Win32::Foundation::HANDLE) -> io::Result<(u16, u32)> {
+        let (byte1, bytes_read1) = read_single_byte_from_file(handle)?;
+
         // If the byte is ASCII (0x00-0x7F), return it as a u16
-        if buf_bytes1[0] <= 0x7F {
-            return Ok((buf_bytes1[0] as u16, bytes_read1));
+        if byte1 <= 0x7F {
+            return Ok((byte1 as u16, bytes_read1));
         }
 
         // If the byte is the first byte of a UTF-16 character (0xC0-0xFF), read the next byte
-        if buf_bytes1[0] >= 0xC0 {
-            let mut buf_bytes2: [u8; 1] = [0];
-            let mut bytes_read2: u32 = 0;
-
-            unsafe {
-                if ReadFile(
-                    handle,
-                    buf_bytes2.as_mut_ptr(),
-                    buf_bytes2.len() as u32,
-                    &mut bytes_read2,
-                    std::ptr::null_mut(),
-                ) == 0 {
-                    return Err(io::Error::last_os_error());
-                }
-            }
-
+        if byte1 >= 0xC0 {
+            let (byte2, bytes_read2) = read_single_byte_from_file(handle)?;
             if bytes_read2 == 0 {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -732,7 +762,7 @@ mod windows {
             }
 
             // Combine the two bytes into a u16
-            let utf16_char = u16::from_le_bytes([buf_bytes1[0], buf_bytes2[0]]);
+            let utf16_char = u16::from_le_bytes([byte1, byte2]);
             return Ok((utf16_char, bytes_read1 + bytes_read2));
         }
 
@@ -744,24 +774,10 @@ mod windows {
 
     fn read_utf16_char_from_handle(handle: HANDLE, is_a_tty: bool) -> io::Result<(u16,u32)> {
         if is_a_tty {
-            let mut buf: [u16; 1] = [0];
-            let mut chars_read: u32 = 0;
-            if unsafe {
-                ReadConsoleW(
-                    handle,
-                    buf.as_mut_ptr() as *mut std::ffi::c_void,
-                    1,
-                    &mut chars_read,
-                    std::ptr::null(),
-                )
-            } == 0
-            {
-                return Err(std::io::Error::last_os_error());
-            }
-            return Ok((buf[0], chars_read));
+            read_single_char_from_console(handle)
+        } else {
+            read_utf16_or_ascii_from_file(handle)
         }
-
-        read_utf16_or_ascii_from_file(handle)
     }
 
     #[derive(Debug)]
@@ -805,38 +821,22 @@ mod windows {
             let output_path_wide: Vec<u16> = config.input_output.clone().and_then(|p| p.get_output_path().map(|path| path.to_owned()))
                 .unwrap_or(DEFAULT_OUTPUT_PATH.to_string()).encode_utf16().chain(std::iter::once(0)).collect();
 
-            let input_handle = unsafe {
-                CreateFileW(
-                    input_path_wide.as_ptr(),
-                    GENERIC_READ | GENERIC_WRITE,
-                    FILE_SHARE_READ | FILE_SHARE_WRITE,
-                    std::ptr::null(),
-                    OPEN_EXISTING,
-                    0,
-                    INVALID_HANDLE_VALUE,
-                )
-            };
-            if input_handle == INVALID_HANDLE_VALUE {
-                return Err(std::io::Error::last_os_error());
-            }
+            let input_handle = open_file(
+                match config.input_output {
+                    Some(ref v) => v.get_input_path().unwrap_or(DEFAULT_INPUT_PATH),
+                    _ => DEFAULT_INPUT_PATH,
+                }
+            )?;
 
             let output_handle = if input_path_wide == output_path_wide {
                 input_handle
             } else {
-                let output_handle = unsafe {
-                    CreateFileW(
-                        output_path_wide.as_ptr(),
-                        GENERIC_READ | GENERIC_WRITE,
-                        FILE_SHARE_READ | FILE_SHARE_WRITE,
-                        std::ptr::null(),
-                        OPEN_EXISTING,
-                        0,
-                        INVALID_HANDLE_VALUE,
-                    )
-                };
-                if output_handle == INVALID_HANDLE_VALUE {
-                    return Err(std::io::Error::last_os_error());
-                }
+                let output_handle = open_file(
+                    match config.input_output {
+                        Some(ref v) => v.get_output_path().unwrap_or(DEFAULT_OUTPUT_PATH),
+                        _ => DEFAULT_OUTPUT_PATH,
+                    }
+                )?;
                 output_handle
             };
 
