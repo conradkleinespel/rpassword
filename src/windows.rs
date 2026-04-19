@@ -139,7 +139,7 @@ fn read_utf16_char_from_handle(handle: HANDLE, is_a_tty: bool) -> io::Result<(u1
 }
 
 #[derive(Debug)]
-struct RawModeInput {
+pub struct RawModeInput {
     input_handle: HANDLE,
     output_handle: HANDLE,
     input_mode: u32,
@@ -177,7 +177,7 @@ impl Drop for RawModeInput {
 }
 
 impl RawModeInput {
-    fn new(config: Config) -> io::Result<RawModeInput> {
+    pub fn new(config: Config) -> io::Result<RawModeInput> {
         let input_handle = open_file(config.input_path.as_str())?;
         let output_handle = if config.input_path == config.output_path {
             input_handle
@@ -342,17 +342,6 @@ impl RawModeInput {
 
         Ok(state.into_password())
     }
-}
-
-/// Reads a password from TTY using the given config
-pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
-    let mut raw_mode_input = RawModeInput::new(config)?;
-    raw_mode_input.read_password()
-}
-
-/// Reads a password from the TTY
-pub fn read_password() -> std::io::Result<String> {
-    read_password_with_config(Config::default())
 }
 
 #[cfg(test)]

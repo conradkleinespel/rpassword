@@ -55,9 +55,7 @@ mod unix;
 #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
 mod feedback;
 #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
-pub use unix::read_password;
-#[cfg(all(target_family = "unix", not(target_family = "wasm")))]
-pub use unix::read_password_with_config;
+pub use unix::RawModeInput;
 
 #[cfg(target_family = "windows")]
 mod defaults {
@@ -70,9 +68,7 @@ mod windows;
 #[cfg(target_family = "windows")]
 mod feedback;
 #[cfg(target_family = "windows")]
-pub use windows::read_password;
-#[cfg(target_family = "windows")]
-pub use windows::read_password_with_config;
+pub use windows::RawModeInput;
 
 #[cfg(target_family = "wasm")]
 mod defaults {
@@ -83,9 +79,7 @@ mod defaults {
 #[cfg(target_family = "wasm")]
 mod wasm;
 #[cfg(target_family = "wasm")]
-pub use wasm::read_password;
-#[cfg(target_family = "wasm")]
-pub use wasm::read_password_with_config;
+pub use wasm::RawModeInput;
 
 mod config;
 pub use config::{InputOutput, PasswordFeedback, Config, ConfigBuilder};
@@ -163,6 +157,18 @@ pub fn prompt_password_from_bufread(
     print_writer(writer, prompt.to_string().as_str())
         .and_then(|_| read_password_from_bufread(reader))
 }
+
+/// Reads a password from TTY using the given config
+pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
+    let mut raw_mode_input = RawModeInput::new(config)?;
+    raw_mode_input.read_password()
+}
+
+/// Reads a password from the TTY
+pub fn read_password() -> std::io::Result<String> {
+    read_password_with_config(Config::default())
+}
+
 
 /// Prompts on the TTY and then reads a password from TTY
 pub fn prompt_password(prompt: impl ToString) -> std::io::Result<String> {

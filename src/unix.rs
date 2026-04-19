@@ -46,7 +46,7 @@ fn safe_tcsetattr(fd: c_int, term: &mut termios) -> std::io::Result<()> {
 }
 
 #[derive(Debug)]
-struct RawModeInput {
+pub struct RawModeInput {
     input_file: File,
     output_file: File,
     term_orig: Option<termios>,
@@ -65,7 +65,7 @@ impl Drop for RawModeInput {
 }
 
 impl RawModeInput {
-    fn new(config: Config) -> io::Result<RawModeInput> {
+    pub fn new(config: Config) -> io::Result<RawModeInput> {
         let input_file = std::fs::OpenOptions::new()
             .read(true)
             .open(config.input_path.as_str())?;
@@ -97,7 +97,7 @@ impl RawModeInput {
         safe_tcsetattr(self.input_file.as_raw_fd(), &mut term)
     }
 
-    fn read_password(&mut self) -> std::io::Result<String> {
+    pub fn read_password(&mut self) -> std::io::Result<String> {
         if self.needs_terminal_configuration {
             self.apply_terminal_configuration()?;
         }
@@ -226,18 +226,6 @@ impl RawModeInput {
         Ok(state.into_password())
     }
 }
-
-/// Reads a password from TTY using the given config
-pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
-    let mut raw_mode_input = RawModeInput::new(config)?;
-    raw_mode_input.read_password()
-}
-
-/// Reads a password from the TTY
-pub fn read_password() -> std::io::Result<String> {
-    read_password_with_config(Config::default())
-}
-
 
 #[cfg(test)]
 mod tests {
