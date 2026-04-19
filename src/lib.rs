@@ -13,11 +13,11 @@
 //! println!("Your password is {}", password);
 //! ```
 //!
-//! For testing, you can use `read_password_with_config` and `prompt_password_with_config` with a temporary file:
+//! For testing or custom use-cases, you can use `read_password_with_config` and `prompt_password_with_config`:
 //! ```
 //! use tempfile::NamedTempFile;
 //! use std::io::Write;
-//! use rpassword::InputOutputConfig;
+//! use rpassword::{PasswordFeedback, InputOutput};
 //!
 //! let mut input = NamedTempFile::new().unwrap();
 //! input.write_all(b"my-password\n").unwrap();
@@ -25,10 +25,13 @@
 //! let mut output = NamedTempFile::new().unwrap();
 //!
 //! let config = rpassword::ConfigBuilder::new()
-//!     .input_output_config(InputOutputConfig::InputOutput(
+//!     // Default input/output is the console, but we can pass any file path
+//!     .input_output(InputOutput::InputOutput(
 //!         input.path().to_str().unwrap().to_string(),
 //!         output.path().to_str().unwrap().to_string(),
 //!     ))
+//!     // Default behavior is to hide the password as it's being typed, but we can change that
+//!     .password_feedback(PasswordFeedback::Mask('*'))
 //!     .build();
 //!
 //! let password = rpassword::read_password_with_config(config).unwrap();
@@ -103,7 +106,7 @@ pub enum PasswordFeedback {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Config {
     pub(crate) feedback: PasswordFeedback,
-    pub(crate) input_output: Option<InputOutputConfig>,
+    pub(crate) input_output: Option<InputOutput>,
 }
 
 /// A builder for creating a [`Config`].
@@ -124,26 +127,26 @@ pub struct Config {
 ///
 /// ## Setting Custom Input/Output Paths
 /// ```
-/// use rpassword::{ConfigBuilder, InputOutputConfig};
+/// use rpassword::{ConfigBuilder, InputOutput};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output_config(InputOutputConfig::InputOutputCombined("/dev/tty".to_string()))
+///     .input_output(InputOutput::InputOutputCombined("/dev/tty".to_string()))
 ///     .build();
 /// ```
 ///
 /// ## Combining Feedback and Input/Output Paths
 /// ```
-/// use rpassword::{ConfigBuilder, PasswordFeedback, InputOutputConfig};
+/// use rpassword::{ConfigBuilder, PasswordFeedback, InputOutput};
 ///
 /// let config = ConfigBuilder::new()
 ///     .password_feedback(PasswordFeedback::PartialMask('*', 3))
-///     .input_output_config(InputOutputConfig::InputOutputCombined("/dev/tty".to_string()))
+///     .input_output(InputOutput::InputOutputCombined("/dev/tty".to_string()))
 ///     .build();
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ConfigBuilder {
     feedback: PasswordFeedback,
-    input_output: Option<InputOutputConfig>,
+    input_output: Option<InputOutput>,
 }
 
 /// Configuration for customizing input and output streams or paths.
@@ -157,28 +160,28 @@ pub struct ConfigBuilder {
 ///
 /// ## Setting a Custom Input Path
 /// ```
-/// use rpassword::{ConfigBuilder, InputOutputConfig};
+/// use rpassword::{ConfigBuilder, InputOutput};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output_config(InputOutputConfig::Input("/dev/tty".to_string()))
+///     .input_output(InputOutput::Input("/dev/tty".to_string()))
 ///     .build();
 /// ```
 ///
 /// ## Setting a Custom Output Path
 /// ```
-/// use rpassword::{ConfigBuilder, InputOutputConfig};
+/// use rpassword::{ConfigBuilder, InputOutput};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output_config(InputOutputConfig::Output("/dev/tty".to_string()))
+///     .input_output(InputOutput::Output("/dev/tty".to_string()))
 ///     .build();
 /// ```
 ///
 /// ## Setting Both Custom Input and Output Paths
 /// ```
-/// use rpassword::{ConfigBuilder, InputOutputConfig};
+/// use rpassword::{ConfigBuilder, InputOutput};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output_config(InputOutputConfig::InputOutput(
+///     .input_output(InputOutput::InputOutput(
 ///         "/dev/tty".to_string(),
 ///         "/dev/tty".to_string()
 ///     ))
@@ -187,35 +190,35 @@ pub struct ConfigBuilder {
 ///
 /// ## Setting a Combined Path for Both Input and Output
 /// ```
-/// use rpassword::{ConfigBuilder, InputOutputConfig};
+/// use rpassword::{ConfigBuilder, InputOutput};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output_config(InputOutputConfig::InputOutputCombined("/dev/tty".to_string()))
+///     .input_output(InputOutput::InputOutputCombined("/dev/tty".to_string()))
 ///     .build();
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum InputOutputConfig {
+pub enum InputOutput {
     Input(String),
     Output(String),
     InputOutputCombined(String),
     InputOutput(String, String),
 }
 
-impl InputOutputConfig {
+impl InputOutput {
     fn get_input_path(&self) -> Option<&str> {
         match self {
-            InputOutputConfig::Input(path) => Some(path.as_str()),
-            InputOutputConfig::InputOutput(input_path, _) => Some(input_path.as_str()),
-            InputOutputConfig::InputOutputCombined(path) => Some(path.as_str()),
+            InputOutput::Input(path) => Some(path.as_str()),
+            InputOutput::InputOutput(input_path, _) => Some(input_path.as_str()),
+            InputOutput::InputOutputCombined(path) => Some(path.as_str()),
             _ => None,
         }
     }
 
     fn get_output_path(&self) -> Option<&str> {
         match self {
-            InputOutputConfig::Output(path) => Some(path.as_str()),
-            InputOutputConfig::InputOutput(_, output_path) => Some(output_path.as_str()),
-            InputOutputConfig::InputOutputCombined(path) => Some(path.as_str()),
+            InputOutput::Output(path) => Some(path.as_str()),
+            InputOutput::InputOutput(_, output_path) => Some(output_path.as_str()),
+            InputOutput::InputOutputCombined(path) => Some(path.as_str()),
             _ => None,
         }
     }
@@ -237,9 +240,9 @@ impl ConfigBuilder {
     /// Sets the path to the input and output files (defaults to the console).
     ///
     /// This can also be used to pass a temporary file for testing.
-    pub fn input_output_config(self, input_output_config: InputOutputConfig) -> ConfigBuilder {
+    pub fn input_output(self, input_output: InputOutput) -> ConfigBuilder {
         ConfigBuilder {
-            input_output: Some(input_output_config),
+            input_output: Some(input_output),
             ..self
         }
     }
@@ -1055,13 +1058,13 @@ use crate::defaults::{DEFAULT_OUTPUT_PATH};
 /// ```
 /// use tempfile::NamedTempFile;
 /// use std::io::Write;
-/// use rpassword::{ConfigBuilder, InputOutputConfig, read_password_with_config};
+/// use rpassword::{ConfigBuilder, InputOutput, read_password_with_config};
 ///
 /// let mut input = NamedTempFile::new().unwrap();
 /// input.write_all(b"my-password\n").unwrap();
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output_config(InputOutputConfig::InputOutputCombined(
+///     .input_output(InputOutput::InputOutputCombined(
 ///         input.path().to_str().unwrap().to_string(),
 ///     ))
 ///     .build();
@@ -1089,7 +1092,7 @@ pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<
 /// ```
 /// use tempfile::NamedTempFile;
 /// use std::io::Write;
-/// use rpassword::{ConfigBuilder, InputOutputConfig, prompt_password_with_config};
+/// use rpassword::{ConfigBuilder, InputOutput, prompt_password_with_config};
 ///
 /// let mut input = NamedTempFile::new().unwrap();
 /// input.write_all(b"my-password\n").unwrap();
@@ -1097,7 +1100,7 @@ pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<
 /// let mut output = NamedTempFile::new().unwrap();
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output_config(InputOutputConfig::InputOutput(
+///     .input_output(InputOutput::InputOutput(
 ///         input.path().to_str().unwrap().to_string(),
 ///         output.path().to_str().unwrap().to_string(),
 ///     ))
@@ -1359,7 +1362,7 @@ mod tests {
 
     #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
     mod unix {
-        use crate::{read_password_with_config, ConfigBuilder, InputOutputConfig};
+        use crate::{read_password_with_config, ConfigBuilder, InputOutput};
         use std::io::Write;
 
         #[test]
@@ -1369,7 +1372,7 @@ mod tests {
             let path = temp_file.path().to_str().unwrap().to_string();
 
             let config = ConfigBuilder::new()
-                .input_output_config(InputOutputConfig::InputOutputCombined(path.clone()))
+                .input_output(InputOutput::InputOutputCombined(path.clone()))
                 .build();
 
             // This should fail because it's not a TTY (tcgetattr fails on regular files)
@@ -1385,7 +1388,7 @@ mod tests {
         #[test]
         fn test_read_password_with_config_errors_with_file_not_found() {
             let config = ConfigBuilder::new()
-                .input_output_config(InputOutputConfig::InputOutputCombined("/does/not/exist".to_string()))
+                .input_output(InputOutput::InputOutputCombined("/does/not/exist".to_string()))
                 .build();
 
             // This should fail because it's not a TTY (tcgetattr fails on regular files)
@@ -1402,7 +1405,7 @@ mod tests {
     #[cfg(target_family = "windows")]
     mod windows {
         use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND};
-        use crate::{read_password_with_config, ConfigBuilder, InputOutputConfig};
+        use crate::{read_password_with_config, ConfigBuilder, InputOutput};
         use std::io::{Write};
 
         #[test]
@@ -1412,7 +1415,7 @@ mod tests {
             let path = temp_file.path().to_str().unwrap().to_string();
 
             let config = ConfigBuilder::new()
-                .input_output_config(InputOutputConfig::InputOutputCombined(path.clone()))
+                .input_output(InputOutput::InputOutputCombined(path.clone()))
                 .build();
 
             let result = read_password_with_config(config);
@@ -1422,7 +1425,7 @@ mod tests {
         #[test]
         fn test_read_password_with_config_errors_with_file_not_found() {
             let config = ConfigBuilder::new()
-                .input_output_config(InputOutputConfig::InputOutputCombined("C:\\not-found.txt".to_string()))
+                .input_output(InputOutput::InputOutputCombined("C:\\not-found.txt".to_string()))
                 .build();
 
             // This should fail because it's not a Console (GetConsoleMode fails on regular files)
