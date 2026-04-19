@@ -3,6 +3,8 @@ use crate::defaults::DEFAULT_INPUT_PATH;
 
 /// Controls visual feedback when the user types a password.
 ///
+/// Note: On Wasm, only `PasswordFeedback::Hide` is supported.
+///
 /// # Examples
 ///
 /// ## Using `PasswordFeedback::Mask` to show asterisks (`*`) while typing:
