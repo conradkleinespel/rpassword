@@ -404,7 +404,7 @@ mod unix {
     use libc::{c_int, isatty, tcsetattr, termios, ECHO, ECHONL, ICANON, ISIG, TCSANOW, VMIN, VTIME};
     use super::{Config, FeedbackState, PasswordFeedback};
     use std::fs::File;
-    use std::io::{self, Write};
+    use std::io::{self, Read, Write};
     use std::mem;
     use std::os::unix::io::AsRawFd;
     use crate::defaults::{DEFAULT_INPUT_PATH, DEFAULT_OUTPUT_PATH};
@@ -508,10 +508,7 @@ mod unix {
             let mut byte = [0u8; 1];
 
             loop {
-                let n = unsafe { libc::read(self.input_file.as_raw_fd(), byte.as_mut_ptr() as *mut libc::c_void, 1) };
-                if n < 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
+                let n = self.input_file.read(&mut byte)?;
                 if n <= 0 {
                     // EOF
                    break;
@@ -569,12 +566,7 @@ mod unix {
                     }
                     // ESC: consume and discard escape sequence
                     ESC => {
-                        let n = unsafe {
-                            libc::read(self.input_file.as_raw_fd(), byte.as_mut_ptr() as *mut libc::c_void, 1)
-                        };
-                        if n < 0 {
-                            return Err(std::io::Error::last_os_error());
-                        }
+                        let n = self.input_file.read(&mut byte)?;
                         if n <= 0 {
                             // EOF
                             break;
@@ -582,12 +574,7 @@ mod unix {
                         if n > 0 && (byte[0] == b'[' || byte[0] == b'O') {
                             // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
                             loop {
-                                let n = unsafe {
-                                    libc::read(self.input_file.as_raw_fd(), byte.as_mut_ptr() as *mut libc::c_void, 1)
-                                };
-                                if n < 0 {
-                                    return Err(std::io::Error::last_os_error());
-                                }
+                                let n = self.input_file.read(&mut byte)?;
                                 if n <= 0 {
                                     break;
                                 }
@@ -616,12 +603,7 @@ mod unix {
                         };
                         let mut utf8_buf = vec![byte[0]];
                         for _ in 1..width {
-                            let n = unsafe {
-                                libc::read(self.input_file.as_raw_fd(), byte.as_mut_ptr() as *mut libc::c_void, 1)
-                            };
-                            if n < 0 {
-                                return Err(std::io::Error::last_os_error());
-                            }
+                            let n = self.input_file.read(&mut byte)?;
                             if n <= 0 {
                                 break;
                             }
