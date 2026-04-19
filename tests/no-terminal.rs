@@ -3,16 +3,17 @@
 
 use std::io::Cursor;
 
+#[allow(deprecated)]
 use rpassword::read_password_from_bufread;
 
-#[cfg(unix)]
+#[cfg(all(target_family = "unix", not(target_family = "wasm")))]
 fn close_stdin() {
     unsafe {
         libc::close(libc::STDIN_FILENO);
     }
 }
 
-#[cfg(windows)]
+#[cfg(target_family = "windows")]
 fn close_stdin() {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Console::{GetStdHandle, STD_INPUT_HANDLE};
@@ -22,7 +23,7 @@ fn close_stdin() {
     }
 }
 
-#[cfg(not(any(unix, windows)))]
+#[cfg(target_family = "wasm")]
 fn close_stdin() {
     unimplemented!()
 }
@@ -36,6 +37,7 @@ fn mock_input_lf() -> Cursor<&'static [u8]> {
 }
 
 #[test]
+#[allow(deprecated)]
 fn can_read_from_redirected_input_many_times() {
     close_stdin();
 
@@ -54,6 +56,7 @@ fn can_read_from_redirected_input_many_times() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn can_read_from_input_ctrl_u() {
     close_stdin();
 

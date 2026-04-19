@@ -14,16 +14,21 @@
 //! ```
 //!
 //! For testing, you can use `read_password_with_config` and `prompt_password_with_config` with a temporary file:
-//! ```no_run
+//! ```
 //! use tempfile::NamedTempFile;
 //! use std::io::Write;
+//! use rpassword::InputOutputConfig;
 //!
-//! let mut temp_file = NamedTempFile::new().unwrap();
-//! temp_file.write_all(b"my-password\n").unwrap();
-//! let path = temp_file.path().to_str().unwrap().to_string();
+//! let mut input = NamedTempFile::new().unwrap();
+//! input.write_all(b"my-password\n").unwrap();
+//!
+//! let mut output = NamedTempFile::new().unwrap();
 //!
 //! let config = rpassword::ConfigBuilder::new()
-//!     .input_path(path)
+//!     .input_output_config(InputOutputConfig::InputOutput(
+//!         input.path().to_str().unwrap().to_string(),
+//!         output.path().to_str().unwrap().to_string(),
+//!     ))
 //!     .build();
 //!
 //! let password = rpassword::read_password_with_config(config).unwrap();
@@ -31,10 +36,23 @@
 //! ```
 
 use rtoolbox::fix_line_issues::fix_line_issues;
-use rtoolbox::print_tty::{print_tty, print_writer};
+use rtoolbox::print_tty::{print_writer};
 use rtoolbox::safe_string::SafeString;
 use std::fmt::Debug;
+use std::fs::OpenOptions;
 use std::io::{BufRead, Write};
+
+#[cfg(windows)]
+mod defaults {
+    pub const DEFAULT_INPUT_PATH: &str = "CONIN$";
+    pub const DEFAULT_OUTPUT_PATH: &str = "CONOUT$";
+}
+
+#[cfg(any(all(target_family = "unix", not(target_family = "wasm")), target_family = "wasm"))]
+mod defaults {
+    pub const DEFAULT_INPUT_PATH: &str = "/dev/tty";
+    pub const DEFAULT_OUTPUT_PATH: &str = "/dev/tty";
+}
 
 /// Controls visual feedback when the user types a password.
 ///
@@ -85,7 +103,7 @@ pub enum PasswordFeedback {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Config {
     pub(crate) feedback: PasswordFeedback,
-    pub(crate) input_path: Option<String>,
+    pub(crate) input_output: Option<InputOutputConfig>,
 }
 
 /// A builder for creating a [`Config`].
@@ -104,28 +122,103 @@ pub struct Config {
 ///     .build();
 /// ```
 ///
-/// ## Setting a Custom Input Path
+/// ## Setting Custom Input/Output Paths
 /// ```
-/// use rpassword::ConfigBuilder;
+/// use rpassword::{ConfigBuilder, InputOutputConfig};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_path("/dev/tty".to_string())
+///     .input_output_config(InputOutputConfig::InputOutputCombined("/dev/tty".to_string()))
 ///     .build();
 /// ```
 ///
-/// ## Combining Feedback and Input Path
+/// ## Combining Feedback and Input/Output Paths
 /// ```
-/// use rpassword::{ConfigBuilder, PasswordFeedback};
+/// use rpassword::{ConfigBuilder, PasswordFeedback, InputOutputConfig};
 ///
 /// let config = ConfigBuilder::new()
 ///     .password_feedback(PasswordFeedback::PartialMask('*', 3))
-///     .input_path("/dev/tty".to_string())
+///     .input_output_config(InputOutputConfig::InputOutputCombined("/dev/tty".to_string()))
 ///     .build();
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ConfigBuilder {
     feedback: PasswordFeedback,
-    input_path: Option<String>,
+    input_output: Option<InputOutputConfig>,
+}
+
+/// Configuration for customizing input and output streams or paths.
+///
+/// This enum allows you to specify custom input and output streams or a path that applies to both.
+/// It is useful for testing or scenarios where you need to override the default behavior.
+///
+/// The default behavior is to use the console for input and output, in a cross-platform way.
+///
+/// # Examples
+///
+/// ## Setting a Custom Input Path
+/// ```
+/// use rpassword::{ConfigBuilder, InputOutputConfig};
+///
+/// let config = ConfigBuilder::new()
+///     .input_output_config(InputOutputConfig::Input("/dev/tty".to_string()))
+///     .build();
+/// ```
+///
+/// ## Setting a Custom Output Path
+/// ```
+/// use rpassword::{ConfigBuilder, InputOutputConfig};
+///
+/// let config = ConfigBuilder::new()
+///     .input_output_config(InputOutputConfig::Output("/dev/tty".to_string()))
+///     .build();
+/// ```
+///
+/// ## Setting Both Custom Input and Output Paths
+/// ```
+/// use rpassword::{ConfigBuilder, InputOutputConfig};
+///
+/// let config = ConfigBuilder::new()
+///     .input_output_config(InputOutputConfig::InputOutput(
+///         "/dev/tty".to_string(),
+///         "/dev/tty".to_string()
+///     ))
+///     .build();
+/// ```
+///
+/// ## Setting a Combined Path for Both Input and Output
+/// ```
+/// use rpassword::{ConfigBuilder, InputOutputConfig};
+///
+/// let config = ConfigBuilder::new()
+///     .input_output_config(InputOutputConfig::InputOutputCombined("/dev/tty".to_string()))
+///     .build();
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputOutputConfig {
+    Input(String),
+    Output(String),
+    InputOutputCombined(String),
+    InputOutput(String, String),
+}
+
+impl InputOutputConfig {
+    fn get_input_path(&self) -> Option<&str> {
+        match self {
+            InputOutputConfig::Input(path) => Some(path.as_str()),
+            InputOutputConfig::InputOutput(input_path, _) => Some(input_path.as_str()),
+            InputOutputConfig::InputOutputCombined(path) => Some(path.as_str()),
+            _ => None,
+        }
+    }
+
+    fn get_output_path(&self) -> Option<&str> {
+        match self {
+            InputOutputConfig::Output(path) => Some(path.as_str()),
+            InputOutputConfig::InputOutput(_, output_path) => Some(output_path.as_str()),
+            InputOutputConfig::InputOutputCombined(path) => Some(path.as_str()),
+            _ => None,
+        }
+    }
 }
 
 impl ConfigBuilder {
@@ -141,12 +234,12 @@ impl ConfigBuilder {
         }
     }
 
-    /// Sets the path to the TTY device.
+    /// Sets the path to the input and output files (defaults to the console).
     ///
     /// This can also be used to pass a temporary file for testing.
-    pub fn input_path(self, path: String) -> ConfigBuilder {
+    pub fn input_output_config(self, input_output_config: InputOutputConfig) -> ConfigBuilder {
         ConfigBuilder {
-            input_path: Some(path),
+            input_output: Some(input_output_config),
             ..self
         }
     }
@@ -155,12 +248,12 @@ impl ConfigBuilder {
     pub fn build(self) -> Config {
         Config {
             feedback: self.feedback,
-            input_path: self.input_path,
+            input_output: self.input_output,
         }
     }
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(any(all(target_family = "unix", not(target_family = "wasm")), target_family = "windows"))]
 struct FeedbackState {
     password: SafeString,
     needs_terminal_configuration: bool,
@@ -168,7 +261,7 @@ struct FeedbackState {
     feedback: PasswordFeedback,
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(any(all(target_family = "unix", not(target_family = "wasm")), target_family = "windows"))]
 impl FeedbackState {
     fn new(feedback: PasswordFeedback, needs_terminal_configuration: bool) -> Self {
         FeedbackState {
@@ -264,7 +357,7 @@ impl FeedbackState {
     }
 }
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(any(all(target_family = "unix", not(target_family = "wasm")), target_family = "windows"))]
 fn char_to_bytes(c: char) -> Vec<u8> {
     let mut buf = [0u8; 4];
     c.encode_utf8(&mut buf).as_bytes().to_vec()
@@ -274,6 +367,7 @@ fn char_to_bytes(c: char) -> Vec<u8> {
 mod wasm {
     use super::{Config, ConfigBuilder, PasswordFeedback, SafeString};
     use std::io::{self, BufRead};
+    use crate::defaults::DEFAULT_INPUT_PATH;
 
     /// Reads a password from the TTY
     pub fn read_password() -> std::io::Result<String> {
@@ -282,7 +376,7 @@ mod wasm {
 
     /// Reads a password from TTY using the given config
     pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
-        let tty_path = config.input_path.as_deref().unwrap_or("/dev/tty");
+        let tty_path = config.input_output.and_then(|p| p.get_input_path().map(|path| path.to_owned())).unwrap_or(DEFAULT_INPUT_PATH.to_string());
         let tty = std::fs::File::open(tty_path)?;
         let mut reader = io::BufReader::new(tty);
 
@@ -310,6 +404,7 @@ mod unix {
     use std::io::{self, Write};
     use std::mem;
     use std::os::unix::io::AsRawFd;
+    use crate::defaults::{DEFAULT_INPUT_PATH, DEFAULT_OUTPUT_PATH};
 
     const BACKSPACE: u8 = 0x08;
     const DEL: u8 = 0x7F;
@@ -347,9 +442,10 @@ mod unix {
         io_result(unsafe {tcsetattr(fd, TCSANOW, term)})
     }
 
+    #[derive(Debug)]
     struct RawModeInput {
-        tty: File,
-        fd: i32,
+        input_file: File,
+        output_file: File,
         term_orig: Option<termios>,
         needs_terminal_configuration: bool,
         password_feedback: PasswordFeedback,
@@ -359,7 +455,7 @@ mod unix {
         fn drop(&mut self) {
             if let Some(ref mut term_orig) = self.term_orig {
                 unsafe {
-                    tcsetattr(self.fd, TCSANOW, term_orig);
+                    tcsetattr(self.input_file.as_raw_fd(), TCSANOW, term_orig);
                 }
             }
         }
@@ -367,17 +463,22 @@ mod unix {
 
     impl RawModeInput {
         fn new(config: Config) -> io::Result<RawModeInput> {
-            let tty_path = config.input_path.as_deref().unwrap_or("/dev/tty");
-            let tty = std::fs::OpenOptions::new()
+            let input_path = config.input_output.clone().and_then(|p| p.get_input_path().map(|path| path.to_owned())).unwrap_or(DEFAULT_INPUT_PATH.to_string());
+            let input_file = std::fs::OpenOptions::new()
                 .read(true)
+                .open(input_path)?;
+            let input_fd = input_file.as_raw_fd();
+            let is_a_tty = is_interactive_terminal(input_fd);
+
+            let output_path = config.input_output.clone().and_then(|p| p.get_output_path().map(|path| path.to_owned())).unwrap_or(DEFAULT_OUTPUT_PATH.to_string());
+            let output_file = std::fs::OpenOptions::new()
                 .write(true)
-                .open(tty_path)?;
-            let fd = tty.as_raw_fd();
-            let is_a_tty = is_interactive_terminal(fd);
+                .open(output_path)?;
+
             Ok(RawModeInput {
-                tty,
-                fd,
-                term_orig: if is_a_tty { Some(safe_tcgetattr(fd)?) } else { None },
+                input_file,
+                output_file,
+                term_orig: if is_a_tty { Some(safe_tcgetattr(input_fd)?) } else { None },
                 needs_terminal_configuration: is_a_tty,
                 password_feedback: config.feedback,
             })
@@ -388,11 +489,11 @@ mod unix {
                 panic!("apply_terminal_configuration called on non-TTY");
             }
 
-            let mut term = safe_tcgetattr(self.fd)?;
+            let mut term = safe_tcgetattr(self.input_file.as_raw_fd())?;
             term.c_lflag &= !(ECHO | ICANON | ECHONL | ISIG);
             term.c_cc[VMIN] = 1;
             term.c_cc[VTIME] = 0;
-            safe_tcsetattr(self.fd, &mut term)
+            safe_tcsetattr(self.input_file.as_raw_fd(), &mut term)
         }
 
         fn read_password(&mut self) -> std::io::Result<String> {
@@ -404,7 +505,7 @@ mod unix {
             let mut byte = [0u8; 1];
 
             loop {
-                let n = unsafe { libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
+                let n = unsafe { libc::read(self.input_file.as_raw_fd(), byte.as_mut_ptr() as *mut libc::c_void, 1) };
                 if n < 0 {
                     return Err(std::io::Error::last_os_error());
                 }
@@ -418,8 +519,8 @@ mod unix {
                     b'\n' | b'\r' => {
                         let output = state.finish();
                         if !output.is_empty() {
-                            self.tty.write_all(&output)?;
-                            self.tty.flush()?;
+                            self.output_file.write_all(&output)?;
+                            self.output_file.flush()?;
                         }
                         break;
                     }
@@ -427,24 +528,24 @@ mod unix {
                     DEL | BACKSPACE => {
                         let output = state.pop_char();
                         if !output.is_empty() {
-                            self.tty.write_all(&output)?;
-                            self.tty.flush()?;
+                            self.output_file.write_all(&output)?;
+                            self.output_file.flush()?;
                         }
                     }
                     // Ctrl-U: clear line
                     CTRL_U => {
                         let output = state.clear();
                         if !output.is_empty() {
-                            self.tty.write_all(&output)?;
-                            self.tty.flush()?;
+                            self.output_file.write_all(&output)?;
+                            self.output_file.flush()?;
                         }
                     }
                     // Ctrl-C: interrupt
                     CTRL_C => {
                         let output = state.abort();
                         if !output.is_empty() {
-                            self.tty.write_all(&output)?;
-                            self.tty.flush()?;
+                            self.output_file.write_all(&output)?;
+                            self.output_file.flush()?;
                         }
                         unsafe {
                             libc::raise(libc::SIGINT);
@@ -466,7 +567,7 @@ mod unix {
                     // ESC: consume and discard escape sequence
                     ESC => {
                         let n = unsafe {
-                            libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1)
+                            libc::read(self.input_file.as_raw_fd(), byte.as_mut_ptr() as *mut libc::c_void, 1)
                         };
                         if n < 0 {
                             return Err(std::io::Error::last_os_error());
@@ -479,7 +580,7 @@ mod unix {
                             // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
                             loop {
                                 let n = unsafe {
-                                    libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1)
+                                    libc::read(self.input_file.as_raw_fd(), byte.as_mut_ptr() as *mut libc::c_void, 1)
                                 };
                                 if n < 0 {
                                     return Err(std::io::Error::last_os_error());
@@ -498,8 +599,8 @@ mod unix {
                     0x20..=0x7E => {
                         let output = state.push_char(byte[0] as char);
                         if !output.is_empty() {
-                            self.tty.write_all(&output)?;
-                            self.tty.flush()?;
+                            self.output_file.write_all(&output)?;
+                            self.output_file.flush()?;
                         }
                     }
                     // UTF-8 multi-byte lead byte
@@ -513,8 +614,11 @@ mod unix {
                         let mut utf8_buf = vec![byte[0]];
                         for _ in 1..width {
                             let n = unsafe {
-                                libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1)
+                                libc::read(self.input_file.as_raw_fd(), byte.as_mut_ptr() as *mut libc::c_void, 1)
                             };
+                            if n < 0 {
+                                return Err(std::io::Error::last_os_error());
+                            }
                             if n <= 0 {
                                 break;
                             }
@@ -524,8 +628,8 @@ mod unix {
                             if let Some(c) = s.chars().next() {
                                 let output = state.push_char(c);
                                 if !output.is_empty() {
-                                    self.tty.write_all(&output)?;
-                                    self.tty.flush()?;
+                                    self.output_file.write_all(&output)?;
+                                    self.output_file.flush()?;
                                 }
                             }
                         }
@@ -567,6 +671,7 @@ mod windows {
         GetConsoleMode, ReadConsoleW, SetConsoleMode, CONSOLE_MODE,
         ENABLE_PROCESSED_INPUT,
     };
+    use crate::defaults::{DEFAULT_INPUT_PATH, DEFAULT_OUTPUT_PATH};
 
     const BACKSPACE: char = '\x08';
     const DEL: char = '\x7F';
@@ -674,6 +779,7 @@ mod windows {
         read_utf16_or_ascii_from_file(handle)
     }
 
+    #[derive(Debug)]
     struct RawModeInput {
         input_handle: HANDLE,
         output_handle: HANDLE,
@@ -685,14 +791,21 @@ mod windows {
 
     impl Drop for RawModeInput {
         fn drop(&mut self) {
+            let same_input_output = self.input_handle == self.output_handle;
+
             unsafe {
                 SetConsoleMode(self.input_handle, self.input_mode);
             }
             unsafe {
-                SetConsoleMode(self.output_handle, self.output_mode);
-            }
-            unsafe {
                 windows_sys::Win32::Foundation::CloseHandle(self.input_handle);
+            }
+
+            if same_input_output {
+                return;
+            }
+
+            unsafe {
+                SetConsoleMode(self.output_handle, self.output_mode);
             }
             unsafe {
                 windows_sys::Win32::Foundation::CloseHandle(self.output_handle);
@@ -702,14 +815,14 @@ mod windows {
 
     impl RawModeInput {
         fn new(config: Config) -> io::Result<RawModeInput> {
-            let path_wide: Option<Vec<u16>> = config.input_path
-                .map(|p| p.encode_utf16().chain(std::iter::once(0)).collect());
+            let input_path_wide: Vec<u16> = config.input_output.clone().and_then(|p| p.get_input_path().map(|path| path.to_owned()))
+                .unwrap_or(DEFAULT_INPUT_PATH.to_string()).encode_utf16().chain(std::iter::once(0)).collect();
+            let output_path_wide: Vec<u16> = config.input_output.clone().and_then(|p| p.get_output_path().map(|path| path.to_owned()))
+                .unwrap_or(DEFAULT_OUTPUT_PATH.to_string()).encode_utf16().chain(std::iter::once(0)).collect();
 
             let input_handle = unsafe {
                 CreateFileW(
-                    path_wide.clone()
-                        .unwrap_or("CONIN$".encode_utf16().chain(std::iter::once(0)).collect())
-                        .as_ptr(),
+                    input_path_wide.as_ptr(),
                     GENERIC_READ | GENERIC_WRITE,
                     FILE_SHARE_READ | FILE_SHARE_WRITE,
                     std::ptr::null(),
@@ -722,22 +835,25 @@ mod windows {
                 return Err(std::io::Error::last_os_error());
             }
 
-            let output_handle = unsafe {
-                CreateFileW(
-                    path_wide.clone()
-                        .unwrap_or("CONOUT$".encode_utf16().chain(std::iter::once(0)).collect())
-                        .as_ptr(),
-                    GENERIC_READ | GENERIC_WRITE,
-                    FILE_SHARE_READ | FILE_SHARE_WRITE,
-                    std::ptr::null(),
-                    OPEN_EXISTING,
-                    0,
-                    INVALID_HANDLE_VALUE,
-                )
+            let output_handle = if input_path_wide == output_path_wide {
+                input_handle
+            } else {
+                let output_handle = unsafe {
+                    CreateFileW(
+                        output_path_wide.as_ptr(),
+                        GENERIC_READ | GENERIC_WRITE,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        std::ptr::null(),
+                        OPEN_EXISTING,
+                        0,
+                        INVALID_HANDLE_VALUE,
+                    )
+                };
+                if output_handle == INVALID_HANDLE_VALUE {
+                    return Err(std::io::Error::last_os_error());
+                }
+                output_handle
             };
-            if output_handle == INVALID_HANDLE_VALUE {
-                return Err(std::io::Error::last_os_error());
-            }
 
             let is_a_tty = is_interactive_terminal(input_handle);
 
@@ -928,8 +1044,35 @@ pub use wasm::read_password_with_config;
 pub use windows::read_password;
 #[cfg(target_family = "windows")]
 pub use windows::read_password_with_config;
+use crate::defaults::{DEFAULT_OUTPUT_PATH};
 
-/// Reads a password from `impl BufRead`
+/// Reads a password from `impl BufRead`.
+///
+/// **Deprecated**: This method is deprecated. Use `read_password_with_config` with a temporary file instead.
+/// See the example below for updated usage.
+///
+/// # Example of Updated Usage
+/// ```
+/// use tempfile::NamedTempFile;
+/// use std::io::Write;
+/// use rpassword::{ConfigBuilder, InputOutputConfig, read_password_with_config};
+///
+/// let mut input = NamedTempFile::new().unwrap();
+/// input.write_all(b"my-password\n").unwrap();
+///
+/// let config = ConfigBuilder::new()
+///     .input_output_config(InputOutputConfig::InputOutputCombined(
+///         input.path().to_str().unwrap().to_string(),
+///     ))
+///     .build();
+///
+/// let password = read_password_with_config(config).unwrap();
+/// println!("The typed password is: {}", password);
+/// ```
+#[deprecated(
+    since = "7.5.0",
+    note = "Use `read_password_with_config` with a temporary file instead. See the example above for updated usage."
+)]
 pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<String> {
     let mut password = SafeString::new();
     reader.read_line(&mut password)?;
@@ -937,7 +1080,37 @@ pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<
     fix_line_issues(password.into_inner())
 }
 
-/// Prompts on `impl Write` and then reads a password from `impl BufRead`
+/// Prompts on `impl Write` and then reads a password from `impl BufRead`.
+///
+/// **Deprecated**: This method is deprecated. Use `prompt_password_with_config` with a temporary file instead.
+/// See the example below for updated usage.
+///
+/// # Example of Updated Usage
+/// ```
+/// use tempfile::NamedTempFile;
+/// use std::io::Write;
+/// use rpassword::{ConfigBuilder, InputOutputConfig, prompt_password_with_config};
+///
+/// let mut input = NamedTempFile::new().unwrap();
+/// input.write_all(b"my-password\n").unwrap();
+///
+/// let mut output = NamedTempFile::new().unwrap();
+///
+/// let config = ConfigBuilder::new()
+///     .input_output_config(InputOutputConfig::InputOutput(
+///         input.path().to_str().unwrap().to_string(),
+///         output.path().to_str().unwrap().to_string(),
+///     ))
+///     .build();
+///
+/// let password = prompt_password_with_config("Your password: ", config).unwrap();
+/// println!("The typed password is: {}", password);
+/// ```
+#[deprecated(
+    since = "7.5.0",
+    note = "Use `prompt_password_with_config` with a temporary file instead. See the example above for updated usage."
+)]
+#[allow(deprecated)]
 pub fn prompt_password_from_bufread(
     reader: &mut impl BufRead,
     writer: &mut impl Write,
@@ -949,15 +1122,34 @@ pub fn prompt_password_from_bufread(
 
 /// Prompts on the TTY and then reads a password from TTY
 pub fn prompt_password(prompt: impl ToString) -> std::io::Result<String> {
-    print_tty(prompt.to_string().as_str()).and_then(|_| read_password())
+    prompt_password_with_config(prompt, ConfigBuilder::new().build())
 }
 
-/// Prompts on the TTY and then reads a password from TTY using the given config
+/// Prompts and then reads a password using the given config
 pub fn prompt_password_with_config(
     prompt: impl ToString,
     config: Config,
 ) -> std::io::Result<String> {
-    print_tty(prompt.to_string().as_str()).and_then(|_| read_password_with_config(config))
+    match config.input_output {
+        Some(ref io) => {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .open(
+                    io.get_output_path().map(|path| path.to_owned())
+                        .unwrap_or(DEFAULT_OUTPUT_PATH.to_string())
+                )?;
+            file.write_all(prompt.to_string().as_bytes())?;
+            file.flush()?;
+        }
+        None => {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .open(DEFAULT_OUTPUT_PATH)?;
+            file.write_all(prompt.to_string().as_bytes())?;
+            file.flush()?;
+        }
+    };
+    read_password_with_config(config)
 }
 
 #[cfg(test)]
@@ -974,6 +1166,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn can_read_from_redirected_input_many_times() {
         let mut reader_crlf = mock_input_crlf();
 
@@ -989,7 +1182,7 @@ mod tests {
         assert_eq!(response, "Another mocked response.");
     }
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(any(all(target_family = "unix", not(target_family = "wasm")), target_family = "windows"))]
     mod feedback_state_tests {
         mod with_terminal_configuration {
             use crate::{FeedbackState, PasswordFeedback};
@@ -1166,7 +1359,7 @@ mod tests {
 
     #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
     mod unix {
-        use crate::{read_password_with_config, ConfigBuilder};
+        use crate::{read_password_with_config, ConfigBuilder, InputOutputConfig};
         use std::io::Write;
 
         #[test]
@@ -1176,7 +1369,7 @@ mod tests {
             let path = temp_file.path().to_str().unwrap().to_string();
 
             let config = ConfigBuilder::new()
-                .input_path(path.clone())
+                .input_output_config(InputOutputConfig::InputOutputCombined(path.clone()))
                 .build();
 
             // This should fail because it's not a TTY (tcgetattr fails on regular files)
@@ -1192,7 +1385,7 @@ mod tests {
         #[test]
         fn test_read_password_with_config_errors_with_file_not_found() {
             let config = ConfigBuilder::new()
-                .input_path("/does/not/exist".to_string())
+                .input_output_config(InputOutputConfig::InputOutputCombined("/does/not/exist".to_string()))
                 .build();
 
             // This should fail because it's not a TTY (tcgetattr fails on regular files)
@@ -1209,7 +1402,7 @@ mod tests {
     #[cfg(target_family = "windows")]
     mod windows {
         use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND};
-        use crate::{read_password_with_config, ConfigBuilder};
+        use crate::{read_password_with_config, ConfigBuilder, InputOutputConfig};
         use std::io::{Write};
 
         #[test]
@@ -1219,7 +1412,7 @@ mod tests {
             let path = temp_file.path().to_str().unwrap().to_string();
 
             let config = ConfigBuilder::new()
-                .input_path(path)
+                .input_output_config(InputOutputConfig::InputOutputCombined(path.clone()))
                 .build();
 
             let result = read_password_with_config(config);
@@ -1229,7 +1422,7 @@ mod tests {
         #[test]
         fn test_read_password_with_config_errors_with_file_not_found() {
             let config = ConfigBuilder::new()
-                .input_path("C:\\not-found.txt".to_string())
+                .input_output_config(InputOutputConfig::InputOutputCombined("C:\\not-found.txt".to_string()))
                 .build();
 
             // This should fail because it's not a Console (GetConsoleMode fails on regular files)
