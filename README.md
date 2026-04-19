@@ -16,6 +16,8 @@ rpassword = "7.4"
 
 See examples and docs at [https://docs.rs/rpassword](https://docs.rs/rpassword).
 
+See the upgrade path in [UPGRADE.md](UPGRADE.md).
+
 ## License
 
 The source code is released under the Apache 2.0 license.
