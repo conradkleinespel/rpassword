@@ -152,22 +152,26 @@ impl Drop for RawModeInput {
     fn drop(&mut self) {
         let same_input_output = self.input_handle == self.output_handle;
 
-        unsafe {
-            SetConsoleMode(self.input_handle, self.input_mode);
-        }
-        unsafe {
-            windows_sys::Win32::Foundation::CloseHandle(self.input_handle);
+        if self.input_handle != INVALID_HANDLE_VALUE {
+            unsafe {
+                SetConsoleMode(self.input_handle, self.input_mode);
+            }
+            unsafe {
+                windows_sys::Win32::Foundation::CloseHandle(self.input_handle);
+            }
         }
 
         if same_input_output {
             return;
         }
 
-        unsafe {
-            SetConsoleMode(self.output_handle, self.output_mode);
-        }
-        unsafe {
-            windows_sys::Win32::Foundation::CloseHandle(self.output_handle);
+        if self.output_handle != INVALID_HANDLE_VALUE {
+            unsafe {
+                SetConsoleMode(self.output_handle, self.output_mode);
+            }
+            unsafe {
+                windows_sys::Win32::Foundation::CloseHandle(self.output_handle);
+            }
         }
     }
 }
