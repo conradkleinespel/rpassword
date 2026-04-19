@@ -243,12 +243,9 @@ mod tests {
             .input_output(InputOutput::InputOutputCombined(path.clone()))
             .build();
 
-        // This should fail because it's not a TTY (tcgetattr fails on regular files)
-        // But it proves that read_password_with_config is using our input path.
         let result = read_password_with_config(config);
         assert_eq!("password", result.unwrap());
 
-        // Check that no content was written to the file because it is not a TTY
         let file_content = std::fs::read_to_string(path).unwrap();
         assert_eq!("password\n", file_content);
     }
@@ -259,12 +256,10 @@ mod tests {
             .input_output(InputOutput::InputOutputCombined("/does/not/exist".to_string()))
             .build();
 
-        // This should fail because it's not a TTY (tcgetattr fails on regular files)
-        // But it proves that read_password_with_config is using our input path.
+        // This should fail because the file does not exist
         let result = read_password_with_config(config);
         assert!(result.is_err());
 
-        // On Linux, tcgetattr on a regular file returns ENOTTY (Inappropriate ioctl for device)
         let err = result.unwrap_err();
         assert_eq!(err.raw_os_error(), Some(libc::ENOENT));
     }
