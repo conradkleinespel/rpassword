@@ -106,7 +106,8 @@ pub enum PasswordFeedback {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Config {
     pub(crate) feedback: PasswordFeedback,
-    pub(crate) input_output: Option<InputOutput>,
+    pub(crate) input_path: String,
+    pub(crate) output_path: String,
 }
 
 /// A builder for creating a [`Config`].
@@ -251,7 +252,14 @@ impl ConfigBuilder {
     pub fn build(self) -> Config {
         Config {
             feedback: self.feedback,
-            input_output: self.input_output,
+            input_path: match self.input_output {
+                Some(ref v) => v.get_input_path().unwrap_or(DEFAULT_INPUT_PATH).to_string(),
+                _ => DEFAULT_INPUT_PATH.to_string(),
+            },
+            output_path: match self.input_output {
+                Some(ref v) => v.get_output_path().unwrap_or(DEFAULT_OUTPUT_PATH).to_string(),
+                _ => DEFAULT_OUTPUT_PATH.to_string(),
+            },
         }
     }
 }
@@ -370,7 +378,6 @@ fn char_to_bytes(c: char) -> Vec<u8> {
 mod wasm {
     use super::{Config, ConfigBuilder, PasswordFeedback, SafeString};
     use std::io::{self, BufRead};
-    use crate::defaults::DEFAULT_INPUT_PATH;
 
     /// Reads a password from the TTY
     pub fn read_password() -> std::io::Result<String> {
@@ -379,8 +386,7 @@ mod wasm {
 
     /// Reads a password from TTY using the given config
     pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
-        let tty_path = config.input_output.and_then(|p| p.get_input_path().map(|path| path.to_owned())).unwrap_or(DEFAULT_INPUT_PATH.to_string());
-        let tty = std::fs::File::open(tty_path)?;
+        let tty = std::fs::File::open(config.input_path.as_str())?;
         let mut reader = io::BufReader::new(tty);
 
         match config.feedback {
@@ -407,7 +413,6 @@ mod unix {
     use std::io::{self, Read, Write};
     use std::mem;
     use std::os::unix::io::AsRawFd;
-    use crate::defaults::{DEFAULT_INPUT_PATH, DEFAULT_OUTPUT_PATH};
 
     const BACKSPACE: u8 = 0x08;
     const DEL: u8 = 0x7F;
@@ -466,17 +471,15 @@ mod unix {
 
     impl RawModeInput {
         fn new(config: Config) -> io::Result<RawModeInput> {
-            let input_path = config.input_output.clone().and_then(|p| p.get_input_path().map(|path| path.to_owned())).unwrap_or(DEFAULT_INPUT_PATH.to_string());
             let input_file = std::fs::OpenOptions::new()
                 .read(true)
-                .open(input_path)?;
+                .open(config.input_path.as_str())?;
             let input_fd = input_file.as_raw_fd();
             let is_a_tty = is_interactive_terminal(input_fd);
 
-            let output_path = config.input_output.clone().and_then(|p| p.get_output_path().map(|path| path.to_owned())).unwrap_or(DEFAULT_OUTPUT_PATH.to_string());
             let output_file = std::fs::OpenOptions::new()
                 .write(true)
-                .open(output_path)?;
+                .open(config.output_path.as_str())?;
 
             Ok(RawModeInput {
                 input_file,
@@ -656,7 +659,6 @@ mod windows {
         GetConsoleMode, ReadConsoleW, SetConsoleMode, CONSOLE_MODE,
         ENABLE_PROCESSED_INPUT,
     };
-    use crate::defaults::{DEFAULT_INPUT_PATH, DEFAULT_OUTPUT_PATH};
 
     const BACKSPACE: char = '\x08';
     const DEL: char = '\x7F';
@@ -816,27 +818,11 @@ mod windows {
 
     impl RawModeInput {
         fn new(config: Config) -> io::Result<RawModeInput> {
-            let input_path_wide: Vec<u16> = config.input_output.clone().and_then(|p| p.get_input_path().map(|path| path.to_owned()))
-                .unwrap_or(DEFAULT_INPUT_PATH.to_string()).encode_utf16().chain(std::iter::once(0)).collect();
-            let output_path_wide: Vec<u16> = config.input_output.clone().and_then(|p| p.get_output_path().map(|path| path.to_owned()))
-                .unwrap_or(DEFAULT_OUTPUT_PATH.to_string()).encode_utf16().chain(std::iter::once(0)).collect();
-
-            let input_handle = open_file(
-                match config.input_output {
-                    Some(ref v) => v.get_input_path().unwrap_or(DEFAULT_INPUT_PATH),
-                    _ => DEFAULT_INPUT_PATH,
-                }
-            )?;
-
-            let output_handle = if input_path_wide == output_path_wide {
+            let input_handle = open_file(config.input_path.as_str())?;
+            let output_handle = if config.input_path == config.output_path {
                 input_handle
             } else {
-                let output_handle = open_file(
-                    match config.input_output {
-                        Some(ref v) => v.get_output_path().unwrap_or(DEFAULT_OUTPUT_PATH),
-                        _ => DEFAULT_OUTPUT_PATH,
-                    }
-                )?;
+                let output_handle = open_file(config.output_path.as_str())?;
                 output_handle
             };
 
@@ -1022,7 +1008,7 @@ pub use wasm::read_password_with_config;
 pub use windows::read_password;
 #[cfg(target_family = "windows")]
 pub use windows::read_password_with_config;
-use crate::defaults::{DEFAULT_OUTPUT_PATH};
+use crate::defaults::{DEFAULT_INPUT_PATH, DEFAULT_OUTPUT_PATH};
 
 /// Reads a password from `impl BufRead`.
 ///
@@ -1108,25 +1094,11 @@ pub fn prompt_password_with_config(
     prompt: impl ToString,
     config: Config,
 ) -> std::io::Result<String> {
-    match config.input_output {
-        Some(ref io) => {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .open(
-                    io.get_output_path().map(|path| path.to_owned())
-                        .unwrap_or(DEFAULT_OUTPUT_PATH.to_string())
-                )?;
-            file.write_all(prompt.to_string().as_bytes())?;
-            file.flush()?;
-        }
-        None => {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .open(DEFAULT_OUTPUT_PATH)?;
-            file.write_all(prompt.to_string().as_bytes())?;
-            file.flush()?;
-        }
-    };
+    let mut file = OpenOptions::new()
+        .write(true)
+        .open(config.output_path.as_str())?;
+    file.write_all(prompt.to_string().as_bytes())?;
+    file.flush()?;
     read_password_with_config(config)
 }
 
