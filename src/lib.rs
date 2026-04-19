@@ -327,9 +327,14 @@ mod unix {
     }
 
     fn is_interactive_terminal(fd: c_int) -> bool {
-        unsafe {
+        let result = unsafe {
             isatty(fd) != 0
-        }
+        };
+        // For any non terminal, `isatty` produces ENOTTY, we clean it up
+        unsafe {
+            *libc::__errno_location() = 0;
+        };
+        result
     }
 
     fn safe_tcgetattr(fd: c_int) -> std::io::Result<termios> {
@@ -400,8 +405,12 @@ mod unix {
 
             loop {
                 let n = unsafe { libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
-                if n <= 0 {
+                if n < 0 {
                     return Err(std::io::Error::last_os_error());
+                }
+                if n <= 0 {
+                    // EOF
+                   break;
                 }
 
                 match byte[0] {
@@ -459,12 +468,22 @@ mod unix {
                         let n = unsafe {
                             libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1)
                         };
+                        if n < 0 {
+                            return Err(std::io::Error::last_os_error());
+                        }
+                        if n <= 0 {
+                            // EOF
+                            break;
+                        }
                         if n > 0 && (byte[0] == b'[' || byte[0] == b'O') {
                             // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
                             loop {
                                 let n = unsafe {
                                     libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1)
                                 };
+                                if n < 0 {
+                                    return Err(std::io::Error::last_os_error());
+                                }
                                 if n <= 0 {
                                     break;
                                 }
@@ -588,9 +607,9 @@ mod windows {
             }
         }
 
-        // If no bytes were read, return None (EOF)
+        // If no bytes were read, EOF
         if bytes_read1 == 0 {
-            return Ok((0, bytes_read1));
+            return Ok((0, 0));
         }
 
         // If the byte is ASCII (0x00-0x7F), return it as a u16
@@ -760,7 +779,8 @@ mod windows {
             loop {
                 let (wchar, chars_read) = read_utf16_char_from_handle(self.input_handle, self.needs_terminal_configuration)?;
                 if chars_read == 0 {
-                    continue;
+                    // EOF
+                    break;
                 }
 
                 // Handle UTF-16 surrogate pairs: characters above U+FFFF (e.g. emoji)
