@@ -2,12 +2,12 @@ use crate::RawPasswordInput;
 use crate::config::Config;
 use rtoolbox::fix_line_issues::fix_line_issues;
 use std::fs::OpenOptions;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Read};
 
-pub const DEFAULT_INPUT_PATH: &str = "/dev/stdin";
-pub const DEFAULT_OUTPUT_PATH: &str = "/dev/stdout";
+pub(crate) const DEFAULT_INPUT_PATH: &str = "/dev/stdin";
+pub(crate) const DEFAULT_OUTPUT_PATH: &str = "/dev/stdout";
 
-pub struct RawModeInput {
+pub(crate) struct RawModeInput {
     config: Config,
 }
 
@@ -33,10 +33,16 @@ impl RawPasswordInput for RawModeInput {
         &mut self,
         _password_feedback: crate::PasswordFeedback,
     ) -> std::io::Result<String> {
-        let input_file = OpenOptions::new()
-            .read(true)
-            .open(self.config.input_path.as_str())?;
-        let mut reader = BufReader::new(input_file);
+        let input: Box<dyn Read> = match self.config.clone().input_output.input {
+            crate::InputOutputTarget::Cursor(cursor) => Box::new(cursor),
+            crate::InputOutputTarget::FilePath(path) => {
+                Box::new(OpenOptions::new().read(true).open(path)?)
+            }
+            crate::InputOutputTarget::Void => {
+                unimplemented!()
+            }
+        };
+        let mut reader = BufReader::new(input);
         let mut line = String::new();
         reader.read_line(&mut line)?;
         fix_line_issues(line)

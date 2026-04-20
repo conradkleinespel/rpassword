@@ -1,5 +1,6 @@
 use crate::DEFAULT_INPUT_PATH;
 use crate::DEFAULT_OUTPUT_PATH;
+use std::io::Cursor;
 
 /// Controls visual feedback when the user types a password.
 ///
@@ -48,6 +49,48 @@ pub enum PasswordFeedback {
     PartialMask(char, usize),
 }
 
+/// Specifies the target for input or output operations.
+///
+/// This enum defines where input is read from or where output is written to.
+/// It supports file paths, in-memory cursors, or no input/output at all.
+///
+/// # Variants
+///
+/// - `FilePath(String)`: Reads from or writes to a file at the specified path.
+/// - `Cursor(Cursor<u8>)`: Reads from or writes to an in-memory cursor, useful for testing.
+/// - `Void`: No Input or no Output, useful when input/output is unnecessary.
+///
+/// # Examples
+///
+/// ## Using a File Path
+/// ```
+/// use rpassword::InputOutputTarget;
+///
+/// let target = InputOutputTarget::FilePath("/dev/tty".to_string());
+/// ```
+///
+/// ## Using a Cursor
+/// ```
+/// use rpassword::InputOutputTarget;
+/// use std::io::Cursor;
+///
+/// let cursor = Cursor::new(b"test data".to_vec());
+/// let target = InputOutputTarget::Cursor(cursor);
+/// ```
+///
+/// ## No Input/Output
+/// ```
+/// use rpassword::InputOutputTarget;
+///
+/// let target = InputOutputTarget::Void;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputOutputTarget {
+    FilePath(String),
+    Cursor(Cursor<Vec<u8>>),
+    Void,
+}
+
 /// Configuration for customizing input and output streams or paths.
 ///
 /// This enum allows you to specify custom input and output streams or a path that applies to both.
@@ -59,66 +102,81 @@ pub enum PasswordFeedback {
 ///
 /// ## Setting a Custom Input Path
 /// ```
-/// use rpassword::{ConfigBuilder, InputOutput};
+/// use rpassword::{ConfigBuilder, InputOutput, InputOutputTarget};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output(InputOutput::Input("/dev/tty".to_string()))
+///     .input_output(InputOutput::new().input(InputOutputTarget::FilePath("/dev/tty42".to_string())))
 ///     .build();
 /// ```
 ///
 /// ## Setting a Custom Output Path
 /// ```
-/// use rpassword::{ConfigBuilder, InputOutput};
+/// use rpassword::{ConfigBuilder, InputOutput, InputOutputTarget};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output(InputOutput::Output("/dev/tty".to_string()))
+///     .input_output(InputOutput::new().output(InputOutputTarget::FilePath("/dev/tty".to_string())))
 ///     .build();
 /// ```
 ///
 /// ## Setting Both Custom Input and Output Paths
 /// ```
-/// use rpassword::{ConfigBuilder, InputOutput};
+/// use rpassword::{ConfigBuilder, InputOutput, InputOutputTarget};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output(InputOutput::InputOutput(
-///         "/dev/tty".to_string(),
-///         "/dev/tty".to_string()
-///     ))
+///     .input_output(
+///         InputOutput::new()
+///             .input(InputOutputTarget::FilePath("/dev/tty42".to_string()))
+///             .output(InputOutputTarget::FilePath("/dev/tty84".to_string()))
+///     )
 ///     .build();
 /// ```
 ///
-/// ## Setting a Combined Path for Both Input and Output
+/// ## Setting Input to a Cursor and discarding Output
 /// ```
-/// use rpassword::{ConfigBuilder, InputOutput};
+/// use std::io::Cursor;
+/// use rpassword::{ConfigBuilder, InputOutput, InputOutputTarget};
+///
+/// let input = Cursor::new(b"my-password\n".to_vec());
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output(InputOutput::InputOutputCombined("/dev/tty".to_string()))
+///     .input_output(
+///         InputOutput::new()
+///             .input(InputOutputTarget::Cursor(input))
+///             .output(InputOutputTarget::Void)
+///     )
 ///     .build();
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum InputOutput {
-    Input(String),
-    Output(String),
-    InputOutputCombined(String),
-    InputOutput(String, String),
+pub struct InputOutput {
+    pub(crate) input: InputOutputTarget,
+    pub(crate) output: InputOutputTarget,
+}
+
+impl Default for InputOutput {
+    fn default() -> Self {
+        InputOutput::new()
+    }
 }
 
 impl InputOutput {
-    pub fn get_input_path(&self) -> Option<&str> {
-        match self {
-            InputOutput::Input(path) => Some(path.as_str()),
-            InputOutput::InputOutput(input_path, _) => Some(input_path.as_str()),
-            InputOutput::InputOutputCombined(path) => Some(path.as_str()),
-            _ => None,
+    pub fn new() -> InputOutput {
+        InputOutput {
+            input: InputOutputTarget::FilePath(DEFAULT_INPUT_PATH.to_string()),
+            output: InputOutputTarget::FilePath(DEFAULT_OUTPUT_PATH.to_string()),
         }
     }
 
-    pub fn get_output_path(&self) -> Option<&str> {
-        match self {
-            InputOutput::Output(path) => Some(path.as_str()),
-            InputOutput::InputOutput(_, output_path) => Some(output_path.as_str()),
-            InputOutput::InputOutputCombined(path) => Some(path.as_str()),
-            _ => None,
+    pub fn input(self, input: InputOutputTarget) -> InputOutput {
+        InputOutput {
+            input,
+            output: self.output,
+        }
+    }
+
+    pub fn output(self, output: InputOutputTarget) -> InputOutput {
+        InputOutput {
+            input: self.input,
+            output,
         }
     }
 }
@@ -127,8 +185,7 @@ impl InputOutput {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Config {
     pub(crate) password_feedback: PasswordFeedback,
-    pub(crate) input_path: String,
-    pub(crate) output_path: String,
+    pub(crate) input_output: InputOutput,
 }
 
 /// A builder for creating a [`Config`].
@@ -149,26 +206,26 @@ pub struct Config {
 ///
 /// ## Setting Custom Input/Output Paths
 /// ```
-/// use rpassword::{ConfigBuilder, InputOutput};
+/// use rpassword::{ConfigBuilder, InputOutput, InputOutputTarget};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output(InputOutput::InputOutputCombined("/dev/tty".to_string()))
+///     .input_output(InputOutput::new().input(InputOutputTarget::FilePath("/dev/tty42".to_string())))
 ///     .build();
 /// ```
 ///
 /// ## Combining Feedback and Input/Output Paths
 /// ```
-/// use rpassword::{ConfigBuilder, PasswordFeedback, InputOutput};
+/// use rpassword::{ConfigBuilder, PasswordFeedback, InputOutput, InputOutputTarget};
 ///
 /// let config = ConfigBuilder::new()
 ///     .password_feedback(PasswordFeedback::PartialMask('*', 3))
-///     .input_output(InputOutput::InputOutputCombined("/dev/tty".to_string()))
+///     .input_output(InputOutput::new().input(InputOutputTarget::FilePath("/dev/tty42".to_string())))
 ///     .build();
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ConfigBuilder {
     feedback: PasswordFeedback,
-    input_output: Option<InputOutput>,
+    input_output: InputOutput,
 }
 
 impl ConfigBuilder {
@@ -186,7 +243,7 @@ impl ConfigBuilder {
     /// This can also be used to pass a temporary file for testing.
     pub fn input_output(self, input_output: InputOutput) -> ConfigBuilder {
         ConfigBuilder {
-            input_output: Some(input_output),
+            input_output,
             ..self
         }
     }
@@ -195,17 +252,7 @@ impl ConfigBuilder {
     pub fn build(self) -> Config {
         Config {
             password_feedback: self.feedback,
-            input_path: match self.input_output {
-                Some(ref v) => v.get_input_path().unwrap_or(DEFAULT_INPUT_PATH).to_string(),
-                _ => DEFAULT_INPUT_PATH.to_string(),
-            },
-            output_path: match self.input_output {
-                Some(ref v) => v
-                    .get_output_path()
-                    .unwrap_or(DEFAULT_OUTPUT_PATH)
-                    .to_string(),
-                _ => DEFAULT_OUTPUT_PATH.to_string(),
-            },
+            input_output: self.input_output,
         }
     }
 }
