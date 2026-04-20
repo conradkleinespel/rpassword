@@ -13,7 +13,7 @@ fn main() {
         .build();
     prompt("Password: ");
     match rpassword::read_password_with_config(config) {
-        Ok(pass) => println!("You entered: {}", pass),
+        Ok(pass) => println!("You entered: '{}'", pass),
         Err(e) => eprintln!("Error: {}", e),
     }
 
@@ -23,7 +23,7 @@ fn main() {
         .build();
     prompt("Password: ");
     match rpassword::read_password_with_config(config) {
-        Ok(pass) => println!("You entered: {}", pass),
+        Ok(pass) => println!("You entered: '{}'", pass),
         Err(e) => eprintln!("Error: {}", e),
     }
 
@@ -33,7 +33,7 @@ fn main() {
         .build();
     prompt("Password: ");
     match rpassword::read_password_with_config(config) {
-        Ok(pass) => println!("You entered: {}", pass),
+        Ok(pass) => println!("You entered: '{}'", pass),
         Err(e) => eprintln!("Error: {}", e),
     }
 
@@ -43,7 +43,7 @@ fn main() {
         .build();
     prompt("Password: ");
     match rpassword::read_password_with_config(config) {
-        Ok(pass) => println!("You entered: {}", pass),
+        Ok(pass) => println!("You entered: '{}'", pass),
         Err(e) => eprintln!("Error: {}", e),
     }
 }

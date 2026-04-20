@@ -6,7 +6,7 @@ fn main() {
         .password_feedback(PasswordFeedback::Hide)
         .build();
     match rpassword::prompt_password_with_config("Password: ", config) {
-        Ok(pass) => println!("You entered: {}", pass),
+        Ok(pass) => println!("You entered: '{}'", pass),
         Err(e) => eprintln!("Error: {}", e),
     }
 
@@ -15,7 +15,7 @@ fn main() {
         .password_feedback(PasswordFeedback::Mask('*'))
         .build();
     match rpassword::prompt_password_with_config("Password: ", config) {
-        Ok(pass) => println!("You entered: {}", pass),
+        Ok(pass) => println!("You entered: '{}'", pass),
         Err(e) => eprintln!("Error: {}", e),
     }
 
@@ -24,7 +24,7 @@ fn main() {
         .password_feedback(PasswordFeedback::Mask('#'))
         .build();
     match rpassword::prompt_password_with_config("Password: ", config) {
-        Ok(pass) => println!("You entered: {}", pass),
+        Ok(pass) => println!("You entered: '{}'", pass),
         Err(e) => eprintln!("Error: {}", e),
     }
 
@@ -33,7 +33,7 @@ fn main() {
         .password_feedback(PasswordFeedback::PartialMask('*', 3))
         .build();
     match rpassword::prompt_password_with_config("Password: ", config) {
-        Ok(pass) => println!("You entered: {}", pass),
+        Ok(pass) => println!("You entered: '{}'", pass),
         Err(e) => eprintln!("Error: {}", e),
     }
 }

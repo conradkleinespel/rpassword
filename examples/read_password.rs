@@ -10,7 +10,7 @@ fn main() {
     println!("=== read_password() ===");
     prompt("Password: ");
     match read_password() {
-        Ok(pass) => println!("You entered: {}", pass),
+        Ok(pass) => println!("You entered: '{}'", pass),
         Err(e) => eprintln!("Error: {}", e),
     }
 }
