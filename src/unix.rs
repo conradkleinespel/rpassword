@@ -1,20 +1,13 @@
 use libc::{c_int, isatty, tcsetattr, termios, ECHO, ECHONL, ICANON, ISIG, TCSANOW, VMIN, VTIME};
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, Write, Read};
 use std::mem;
 use std::os::unix::io::AsRawFd;
-use crate::config::{Config, PasswordFeedback};
-use crate::feedback::FeedbackState;
+use crate::config::{Config};
+use crate::{RawPasswordInput};
 
 pub const DEFAULT_INPUT_PATH: &str = "/dev/tty";
 pub const DEFAULT_OUTPUT_PATH: &str = "/dev/tty";
-
-const BACKSPACE: u8 = 0x08;
-const DEL: u8 = 0x7F;
-const CTRL_C: u8 = 0x03;
-const CTRL_D: u8 = 0x04;
-const CTRL_U: u8 = 0x15;
-const ESC: u8 = 0x1B;
 
 /// Turns a C function return into an IO Result
 fn io_result(ret: c_int) -> std::io::Result<()> {
@@ -45,13 +38,56 @@ fn safe_tcsetattr(fd: c_int, term: &mut termios) -> std::io::Result<()> {
     io_result(unsafe {tcsetattr(fd, TCSANOW, term)})
 }
 
+fn read_char(reader: &mut impl Read) -> std::io::Result<char> {
+    let mut byte = [0u8; 1];
+    let n = reader.read(&mut byte)?;
+    if n == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "unexpected end of file",
+        ));
+    }
+
+    match byte[0] {
+        // ASCII
+        0x00..=0x7F => Ok(byte[0] as char),
+        // UTF-8 lead byte
+        0xC0..=0xF7 => {
+            let width = match byte[0] {
+                0xC0..=0xDF => 2,
+                0xE0..=0xEF => 3,
+                0xF0..=0xF7 => 4,
+                _ => unreachable!(),
+            };
+            let mut utf8_buf = vec![byte[0]];
+            for _ in 1..width {
+                let n = reader.read(&mut byte)?;
+                if n == 0 {
+                    return Ok('\u{FFFD}');
+                }
+                utf8_buf.push(byte[0]);
+            }
+            if let Ok(s) = std::str::from_utf8(&utf8_buf) {
+                if let Some(c) = s.chars().next() {
+                    Ok(c)
+                } else {
+                    Ok('\u{FFFD}')
+                }
+            } else {
+                Ok('\u{FFFD}')
+            }
+        }
+        // Invalid byte
+        _ => Ok('\u{FFFD}'),
+    }
+}
+
 #[derive(Debug)]
 pub struct RawModeInput {
     input_file: File,
     output_file: File,
     term_orig: Option<termios>,
     needs_terminal_configuration: bool,
-    password_feedback: PasswordFeedback,
 }
 
 impl Drop for RawModeInput {
@@ -64,8 +100,8 @@ impl Drop for RawModeInput {
     }
 }
 
-impl RawModeInput {
-    pub fn new(config: Config) -> io::Result<RawModeInput> {
+impl RawPasswordInput for RawModeInput {
+    fn new(config: Config) -> io::Result<impl RawPasswordInput> {
         let input_file = std::fs::OpenOptions::new()
             .read(true)
             .open(config.input_path.as_str())?;
@@ -81,8 +117,11 @@ impl RawModeInput {
             output_file,
             term_orig: if is_a_tty { Some(safe_tcgetattr(input_fd)?) } else { None },
             needs_terminal_configuration: is_a_tty,
-            password_feedback: config.feedback,
         })
+    }
+
+    fn needs_terminal_configuration(&self) -> bool {
+        self.needs_terminal_configuration
     }
 
     fn apply_terminal_configuration(&mut self) -> io::Result<()> {
@@ -97,133 +136,22 @@ impl RawModeInput {
         safe_tcsetattr(self.input_file.as_raw_fd(), &mut term)
     }
 
-    pub fn read_password(&mut self) -> std::io::Result<String> {
-        if self.needs_terminal_configuration {
-            self.apply_terminal_configuration()?;
+    fn read_char(&mut self) -> std::io::Result<char> {
+        read_char(&mut self.input_file)
+    }
+
+    fn write_output(&mut self, output: &str) -> std::io::Result<()> {
+    self.output_file.write_all(output.as_bytes())?;
+        self.output_file.flush()
+    }
+
+    fn send_signal_sigint(&mut self) -> io::Result<()> {
+        if unsafe {
+            libc::raise(libc::SIGINT) != 0
+        } {
+            return Err(std::io::Error::last_os_error());
         }
-
-        let mut state = FeedbackState::new(self.password_feedback, self.needs_terminal_configuration);
-        let mut byte = [0u8; 1];
-
-        loop {
-            let n = self.input_file.read(&mut byte)?;
-            if n <= 0 {
-                // EOF
-                break;
-            }
-
-            match byte[0] {
-                // LF / CR (Enter)
-                b'\n' | b'\r' => {
-                    let output = state.finish();
-                    if !output.is_empty() {
-                        self.output_file.write_all(&output)?;
-                        self.output_file.flush()?;
-                    }
-                    break;
-                }
-                // Backspace / DEL
-                DEL | BACKSPACE => {
-                    let output = state.pop_char();
-                    if !output.is_empty() {
-                        self.output_file.write_all(&output)?;
-                        self.output_file.flush()?;
-                    }
-                }
-                // Ctrl-U: clear line
-                CTRL_U => {
-                    let output = state.clear();
-                    if !output.is_empty() {
-                        self.output_file.write_all(&output)?;
-                        self.output_file.flush()?;
-                    }
-                }
-                // Ctrl-C: interrupt
-                CTRL_C => {
-                    let output = state.abort();
-                    if !output.is_empty() {
-                        self.output_file.write_all(&output)?;
-                        self.output_file.flush()?;
-                    }
-                    unsafe {
-                        libc::raise(libc::SIGINT);
-                    }
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Interrupted,
-                        "interrupted",
-                    ));
-                }
-                // Ctrl-D: EOF when empty
-                CTRL_D => {
-                    if state.is_empty() {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::UnexpectedEof,
-                            "unexpected end of file",
-                        ));
-                    }
-                }
-                // ESC: consume and discard escape sequence
-                ESC => {
-                    let n = self.input_file.read(&mut byte)?;
-                    if n <= 0 {
-                        // EOF
-                        break;
-                    }
-                    if n > 0 && (byte[0] == b'[' || byte[0] == b'O') {
-                        // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
-                        loop {
-                            let n = self.input_file.read(&mut byte)?;
-                            if n <= 0 {
-                                break;
-                            }
-                            if (0x40..=0x7E).contains(&byte[0]) {
-                                break;
-                            }
-                        }
-                    }
-                    // Otherwise: 2-byte sequence (ESC + char), already consumed
-                }
-                // Printable ASCII
-                0x20..=0x7E => {
-                    let output = state.push_char(byte[0] as char);
-                    if !output.is_empty() {
-                        self.output_file.write_all(&output)?;
-                        self.output_file.flush()?;
-                    }
-                }
-                // UTF-8 multi-byte lead byte
-                0xC0..=0xF7 => {
-                    let width = match byte[0] {
-                        0xC0..=0xDF => 2,
-                        0xE0..=0xEF => 3,
-                        0xF0..=0xF7 => 4,
-                        _ => unreachable!(),
-                    };
-                    let mut utf8_buf = vec![byte[0]];
-                    for _ in 1..width {
-                        let n = self.input_file.read(&mut byte)?;
-                        if n <= 0 {
-                            break;
-                        }
-                        utf8_buf.push(byte[0]);
-                    }
-                    if let Ok(s) = std::str::from_utf8(&utf8_buf) {
-                        if let Some(c) = s.chars().next() {
-                            let output = state.push_char(c);
-                            if !output.is_empty() {
-                                self.output_file.write_all(&output)?;
-                                self.output_file.flush()?;
-                            }
-                        }
-                    }
-                }
-                // Discard unrecognized control characters (Ctrl-A, Ctrl-B, etc.)
-                // and invalid bytes (bad UTF-8 continuations, 0xF8-0xFF)
-                _ => {}
-            }
-        }
-
-        Ok(state.into_password())
+        Ok(())
     }
 }
 

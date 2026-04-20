@@ -18,80 +18,80 @@ impl FeedbackState {
         }
     }
 
-    pub fn push_char(&mut self, c: char) -> Vec<u8> {
+    pub fn push_char(&mut self, c: char) -> String {
         self.password.push(c);
 
         if !self.needs_terminal_configuration {
-            return Vec::new();
+            return String::new();
         }
 
         match self.feedback {
-            PasswordFeedback::Hide => Vec::new(),
+            PasswordFeedback::Hide => String::new(),
             PasswordFeedback::Mask(mask) => {
                 self.displayed_count += 1;
-                char_to_bytes(mask)
+                mask.to_string()
             }
             PasswordFeedback::PartialMask(mask, n) => {
                 self.displayed_count += 1;
                 if self.displayed_count <= n {
-                    char_to_bytes(c)
+                    c.to_string()
                 } else {
-                    char_to_bytes(mask)
+                    mask.to_string()
                 }
             }
         }
     }
 
-    pub fn pop_char(&mut self) -> Vec<u8> {
+    pub fn pop_char(&mut self) -> String {
         let last_char = self.password.chars().last();
         if let Some(c) = last_char {
             let new_len = self.password.len() - c.len_utf8();
             self.password.truncate(new_len);
 
             if !self.needs_terminal_configuration {
-                return Vec::new();
+                return String::new();
             }
 
             if self.displayed_count > 0 {
                 self.displayed_count -= 1;
-                vec![0x08, b' ', 0x08]
+                "\x08 \x08".to_string()
             } else {
-                Vec::new()
+                String::new()
             }
         } else {
-            Vec::new()
+            String::new()
         }
     }
 
-    pub fn clear(&mut self) -> Vec<u8> {
+    pub fn clear(&mut self) -> String {
         self.password = SafeString::new();
 
         if !self.needs_terminal_configuration {
-            return Vec::new();
+            return String::new();
         }
 
         let count = self.displayed_count;
         self.displayed_count = 0;
-        [0x08u8, b' ', 0x08].repeat(count)
+        "\x08 \x08".repeat(count).to_string()
     }
 
-    pub fn abort(&mut self) -> Vec<u8> {
+    pub fn abort(&mut self) -> String {
         self.password = SafeString::new();
 
         if !self.needs_terminal_configuration {
-            return Vec::new();
+            return String::new();
         }
 
         self.displayed_count = 0;
-        [b'\n'].to_vec()
+        '\n'.to_string()
     }
 
-    pub fn finish(&mut self) -> Vec<u8> {
+    pub fn finish(&mut self) -> String {
         if !self.needs_terminal_configuration {
-            return Vec::new();
+            return String::new();
         }
 
-        [b'\n'].to_vec()
+        '\n'.to_string()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -103,11 +103,6 @@ impl FeedbackState {
     }
 }
 
-fn char_to_bytes(c: char) -> Vec<u8> {
-    let mut buf = [0u8; 4];
-    c.encode_utf8(&mut buf).as_bytes().to_vec()
-}
-
 #[cfg(test)]
 mod tests {
     mod with_terminal_configuration {
@@ -117,18 +112,18 @@ mod tests {
         #[test]
         fn feedback_state_mask_star() {
             let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), true);
-            assert_eq!(state.push_char('a'), b"*");
-            assert_eq!(state.push_char('b'), b"*");
-            assert_eq!(state.push_char('c'), b"*");
-            assert_eq!(state.pop_char(), vec![0x08, b' ', 0x08]);
+            assert_eq!(state.push_char('a'), "*");
+            assert_eq!(state.push_char('b'), "*");
+            assert_eq!(state.push_char('c'), "*");
+            assert_eq!(state.pop_char(), "\x08 \x08");
             assert_eq!(state.into_password(), "ab");
         }
 
         #[test]
         fn feedback_state_mask_hash() {
             let mut state = FeedbackState::new(PasswordFeedback::Mask('#'), true);
-            assert_eq!(state.push_char('x'), b"#");
-            assert_eq!(state.push_char('y'), b"#");
+            assert_eq!(state.push_char('x'), "#");
+            assert_eq!(state.push_char('y'), "#");
             assert_eq!(state.into_password(), "xy");
         }
 
@@ -144,11 +139,11 @@ mod tests {
         #[test]
         fn feedback_state_partial_mask() {
             let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 3), true);
-            assert_eq!(state.push_char('a'), b"a");
-            assert_eq!(state.push_char('b'), b"b");
-            assert_eq!(state.push_char('c'), b"c");
-            assert_eq!(state.push_char('d'), b"*");
-            assert_eq!(state.push_char('e'), b"*");
+            assert_eq!(state.push_char('a'), "a");
+            assert_eq!(state.push_char('b'), "b");
+            assert_eq!(state.push_char('c'), "c");
+            assert_eq!(state.push_char('d'), "*");
+            assert_eq!(state.push_char('e'), "*");
             assert_eq!(state.into_password(), "abcde");
         }
 
@@ -164,7 +159,7 @@ mod tests {
             state.push_char('a');
             state.push_char('b');
             state.push_char('c');
-            assert_eq!(state.clear(), [0x08u8, b' ', 0x08].repeat(3));
+            assert_eq!(state.clear(), "\x08 \x08\x08 \x08\x08 \x08");
             assert!(state.is_empty());
         }
 
@@ -174,7 +169,7 @@ mod tests {
             state.push_char('a');
             state.push_char('b');
             state.push_char('c');
-            assert_eq!(state.abort(), [b'\n']);
+            assert_eq!(state.abort(), "\n");
             assert!(state.is_empty());
         }
 
@@ -184,15 +179,15 @@ mod tests {
             state.push_char('a');
             state.push_char('b');
             state.push_char('c');
-            assert_eq!(state.finish(), [b'\n']);
+            assert_eq!(state.finish(), "\n");
             assert_eq!(state.into_password(), "abc");
         }
 
         #[test]
         fn feedback_state_partial_mask_zero() {
             let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 0), true);
-            assert_eq!(state.push_char('a'), b"*");
-            assert_eq!(state.push_char('b'), b"*");
+            assert_eq!(state.push_char('a'), "*");
+            assert_eq!(state.push_char('b'), "*");
             assert_eq!(state.into_password(), "ab");
         }
     }
@@ -204,18 +199,18 @@ mod tests {
         #[test]
         fn feedback_state_mask_star() {
             let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), false);
-            assert_eq!(state.push_char('a'), vec![]);
-            assert_eq!(state.push_char('b'), vec![]);
-            assert_eq!(state.push_char('c'), vec![]);
-            assert_eq!(state.pop_char(), vec![]);
+            assert_eq!(state.push_char('a'), "");
+            assert_eq!(state.push_char('b'), "");
+            assert_eq!(state.push_char('c'), "");
+            assert_eq!(state.pop_char(), "");
             assert_eq!(state.into_password(), "ab");
         }
 
         #[test]
         fn feedback_state_mask_hash() {
             let mut state = FeedbackState::new(PasswordFeedback::Mask('#'), false);
-            assert_eq!(state.push_char('x'), vec![]);
-            assert_eq!(state.push_char('y'), vec![]);
+            assert_eq!(state.push_char('x'), "");
+            assert_eq!(state.push_char('y'), "");
             assert_eq!(state.into_password(), "xy");
         }
 
@@ -231,11 +226,11 @@ mod tests {
         #[test]
         fn feedback_state_partial_mask() {
             let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 3), false);
-            assert_eq!(state.push_char('a'), vec![]);
-            assert_eq!(state.push_char('b'), vec![]);
-            assert_eq!(state.push_char('c'), vec![]);
-            assert_eq!(state.push_char('d'), vec![]);
-            assert_eq!(state.push_char('e'), vec![]);
+            assert_eq!(state.push_char('a'), "");
+            assert_eq!(state.push_char('b'), "");
+            assert_eq!(state.push_char('c'), "");
+            assert_eq!(state.push_char('d'), "");
+            assert_eq!(state.push_char('e'), "");
             assert_eq!(state.into_password(), "abcde");
         }
 
@@ -251,7 +246,7 @@ mod tests {
             state.push_char('a');
             state.push_char('b');
             state.push_char('c');
-            assert_eq!(state.clear(), vec![]);
+            assert_eq!(state.clear(), "");
             assert!(state.is_empty());
         }
 
@@ -261,7 +256,7 @@ mod tests {
             state.push_char('a');
             state.push_char('b');
             state.push_char('c');
-            assert_eq!(state.abort(), vec![]);
+            assert_eq!(state.abort(), "");
             assert!(state.is_empty());
         }
 
@@ -271,15 +266,15 @@ mod tests {
             state.push_char('a');
             state.push_char('b');
             state.push_char('c');
-            assert_eq!(state.finish(), vec![]);
+            assert_eq!(state.finish(), "");
             assert_eq!(state.into_password(), "abc");
         }
 
         #[test]
         fn feedback_state_partial_mask_zero() {
             let mut state = FeedbackState::new(PasswordFeedback::PartialMask('*', 0), false);
-            assert_eq!(state.push_char('a'), vec![]);
-            assert_eq!(state.push_char('b'), vec![]);
+            assert_eq!(state.push_char('a'), "");
+            assert_eq!(state.push_char('b'), "");
             assert_eq!(state.into_password(), "ab");
         }
     }

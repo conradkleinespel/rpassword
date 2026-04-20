@@ -1,5 +1,5 @@
-use crate::defaults::DEFAULT_OUTPUT_PATH;
-use crate::defaults::DEFAULT_INPUT_PATH;
+use crate::DEFAULT_OUTPUT_PATH;
+use crate::DEFAULT_INPUT_PATH;
 
 /// Controls visual feedback when the user types a password.
 ///
@@ -126,7 +126,7 @@ impl InputOutput {
 /// Configuration for prompting and reading a password.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Config {
-    pub(crate) feedback: PasswordFeedback,
+    pub(crate) password_feedback: PasswordFeedback,
     pub(crate) input_path: String,
     pub(crate) output_path: String,
 }
@@ -197,7 +197,7 @@ impl ConfigBuilder {
     /// Builds the final [`Config`].
     pub fn build(self) -> Config {
         Config {
-            feedback: self.feedback,
+            password_feedback: self.feedback,
             input_path: match self.input_output {
                 Some(ref v) => v.get_input_path().unwrap_or(DEFAULT_INPUT_PATH).to_string(),
                 _ => DEFAULT_INPUT_PATH.to_string(),

@@ -42,47 +42,152 @@ use rtoolbox::fix_line_issues::fix_line_issues;
 use rtoolbox::print_tty::{print_writer};
 use rtoolbox::safe_string::SafeString;
 use std::fs::OpenOptions;
+use std::io;
 use std::io::{BufRead, Write};
 
-#[cfg(all(target_family = "unix", not(target_family = "wasm")))]
-mod defaults {
-    use crate::unix;
-    pub use unix::DEFAULT_INPUT_PATH;
-    pub use unix::DEFAULT_OUTPUT_PATH;
-}
+mod feedback;
+
 #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
 mod unix;
 #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
-mod feedback;
-#[cfg(all(target_family = "unix", not(target_family = "wasm")))]
-pub use unix::RawModeInput;
+pub use unix::*;
 
-#[cfg(target_family = "windows")]
-mod defaults {
-    use crate::windows;
-    pub use windows::DEFAULT_INPUT_PATH;
-    pub use windows::DEFAULT_OUTPUT_PATH;
-}
 #[cfg(target_family = "windows")]
 mod windows;
 #[cfg(target_family = "windows")]
-mod feedback;
-#[cfg(target_family = "windows")]
-pub use windows::RawModeInput;
+pub use windows::*;
 
-#[cfg(target_family = "wasm")]
-mod defaults {
-    use crate::wasm;
-    pub use wasm::DEFAULT_INPUT_PATH;
-    pub use wasm::DEFAULT_OUTPUT_PATH;
-}
 #[cfg(target_family = "wasm")]
 mod wasm;
 #[cfg(target_family = "wasm")]
-pub use wasm::RawModeInput;
+pub use wasm::*;
 
 mod config;
+
 pub use config::{InputOutput, PasswordFeedback, Config, ConfigBuilder};
+use crate::feedback::FeedbackState;
+
+const BACKSPACE: char = '\x08';
+const DEL: char = '\x7F';
+const CTRL_C: char = '\x03';
+const CTRL_D: char = '\x04';
+const CTRL_U: char = '\x15';
+const ESC: char = '\x1B';
+
+trait RawPasswordInput {
+    fn new(config: Config) -> io::Result<impl RawPasswordInput>;
+    fn needs_terminal_configuration(&self) -> bool;
+    fn apply_terminal_configuration(&mut self) -> io::Result<()>;
+    fn read_char(&mut self) -> std::io::Result<char>;
+    fn write_output(&mut self, output: &str) -> std::io::Result<()>;
+    fn send_signal_sigint(&mut self) -> std::io::Result<()>;
+
+    /// Reads a password from the console using the given config
+    fn read_password(&mut self, password_feedback: PasswordFeedback) -> std::io::Result<String> {
+        if self.needs_terminal_configuration() {
+            self.apply_terminal_configuration()?;
+        }
+
+        let mut state = FeedbackState::new(password_feedback, self.needs_terminal_configuration());
+
+        loop {
+            let c = match self.read_char() {
+                Ok(c) => c,
+                Err(e) => {
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                        break;
+                    }
+                    return Err(e);
+                }
+            };
+            match c {
+                // LF / CR (Enter)
+                '\n' | '\r' => {
+                    let output = state.finish();
+                    if !output.is_empty() {
+                        self.write_output(output.as_str())?;
+                    }
+                    break;
+                }
+                // Backspace / DEL
+                DEL | BACKSPACE => {
+                    let output = state.pop_char();
+                    if !output.is_empty() {
+                        self.write_output(output.as_str())?;
+                    }
+                }
+                // Ctrl-U: clear line
+                CTRL_U => {
+                    let output = state.clear();
+                    if !output.is_empty() {
+                        self.write_output(output.as_str())?;
+                    }
+                }
+                // Ctrl-C: interrupt
+                CTRL_C => {
+                    let output = state.abort();
+                    if !output.is_empty() {
+                        self.write_output(output.as_str())?;
+                    }
+                    self.send_signal_sigint()?;
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Interrupted,
+                        "interrupted",
+                    ));
+                }
+                // Ctrl-D: EOF when empty
+                CTRL_D => {
+                    if state.is_empty() {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "unexpected end of file",
+                        ));
+                    }
+                }
+                // ESC: consume and discard escape sequence
+                ESC => {
+                    let c = match self.read_char() {
+                        Ok(c) => c,
+                        Err(e) => {
+                            if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                                break;
+                            }
+                            return Err(e);
+                        }
+                    };
+
+                    if c == '[' || c == 'O' {
+                        // CSI (ESC [) or SS3 (ESC O): read until final byte (0x40-0x7E)
+                        loop {
+                            let c = match self.read_char() {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                                        break;
+                                    }
+                                    return Err(e);
+                                }
+                            };
+                            if ('\x40'..='\x7E').contains(&c) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                c if !c.is_control() => {
+                    let output = state.push_char(c);
+                    if !output.is_empty() {
+                        self.write_output(output.as_str())?;
+                    }
+                }
+                // Discard unrecognized control characters and invalid input
+                _ => {}
+            }
+        }
+
+        Ok(state.into_password())
+    }
+}
 
 /// Reads a password from `impl BufRead`.
 ///
@@ -160,8 +265,9 @@ pub fn prompt_password_from_bufread(
 
 /// Reads a password from TTY using the given config
 pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
+    let password_feedback = config.password_feedback;
     let mut raw_mode_input = RawModeInput::new(config)?;
-    raw_mode_input.read_password()
+    raw_mode_input.read_password(password_feedback)
 }
 
 /// Reads a password from the TTY
