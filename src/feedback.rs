@@ -1,5 +1,6 @@
 use crate::config::PasswordFeedback;
 use rtoolbox::safe_string::SafeString;
+use std::cmp::min;
 
 pub struct FeedbackState {
     password: SafeString,
@@ -75,6 +76,31 @@ impl FeedbackState {
         "\x08 \x08".repeat(count).to_string()
     }
 
+    pub fn clear_til_last_space(&mut self) -> String {
+        let mut trimmed = self.password.as_str().trim_end();
+
+        match trimmed.rfind(' ') {
+            Some(last_space_position) => {
+                trimmed = &trimmed[..=last_space_position];
+            }
+            None => {
+                trimmed = "";
+            }
+        }
+
+        let new_displayed_count = trimmed.chars().count();
+        let removed_chars = self.password.chars().count() - trimmed.chars().count();
+        self.password = trimmed.to_string().into();
+
+        if !self.needs_terminal_configuration {
+            return String::new();
+        }
+
+        let count = self.displayed_count;
+        self.displayed_count = new_displayed_count;
+        "\x08 \x08".repeat(min(removed_chars, count)).to_string()
+    }
+
     pub fn abort(&mut self) -> String {
         self.password = SafeString::new();
 
@@ -114,9 +140,10 @@ mod tests {
             let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), true);
             assert_eq!(state.push_char('a'), "*");
             assert_eq!(state.push_char('b'), "*");
-            assert_eq!(state.push_char('c'), "*");
+            assert_eq!(state.push_char('🚲'), "*");
+            assert_eq!(state.push_char('🚲'), "*");
             assert_eq!(state.pop_char(), "\x08 \x08");
-            assert_eq!(state.into_password(), "ab");
+            assert_eq!(state.into_password(), "ab🚲");
         }
 
         #[test]
@@ -124,7 +151,9 @@ mod tests {
             let mut state = FeedbackState::new(PasswordFeedback::Mask('#'), true);
             assert_eq!(state.push_char('x'), "#");
             assert_eq!(state.push_char('y'), "#");
-            assert_eq!(state.into_password(), "xy");
+            assert_eq!(state.push_char('🚲'), "#");
+            assert_eq!(state.push_char('🚲'), "#");
+            assert_eq!(state.into_password(), "xy🚲🚲");
         }
 
         #[test]
@@ -132,8 +161,9 @@ mod tests {
             let mut state = FeedbackState::new(PasswordFeedback::Hide, true);
             assert!(state.push_char('a').is_empty());
             assert!(state.push_char('b').is_empty());
+            assert!(state.push_char('🚲').is_empty());
             assert!(state.pop_char().is_empty());
-            assert_eq!(state.into_password(), "a");
+            assert_eq!(state.into_password(), "ab");
         }
 
         #[test]
@@ -142,9 +172,9 @@ mod tests {
             assert_eq!(state.push_char('a'), "a");
             assert_eq!(state.push_char('b'), "b");
             assert_eq!(state.push_char('c'), "c");
-            assert_eq!(state.push_char('d'), "*");
-            assert_eq!(state.push_char('e'), "*");
-            assert_eq!(state.into_password(), "abcde");
+            assert_eq!(state.push_char('🚲'), "*");
+            assert_eq!(state.push_char('🚲'), "*");
+            assert_eq!(state.into_password(), "abc🚲🚲");
         }
 
         #[test]
@@ -159,8 +189,28 @@ mod tests {
             state.push_char('a');
             state.push_char('b');
             state.push_char('c');
-            assert_eq!(state.clear(), "\x08 \x08\x08 \x08\x08 \x08");
+            state.push_char('🚲');
+            assert_eq!(state.clear(), "\x08 \x08\x08 \x08\x08 \x08\x08 \x08");
             assert!(state.is_empty());
+        }
+
+        #[test]
+        fn feedback_state_clear_til_last_space() {
+            let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), true);
+            state.push_char('a');
+            state.push_char('b');
+            state.push_char('c');
+            state.push_char(' ');
+            state.push_char('d');
+            state.push_char('🚲');
+            state.push_char(' ');
+            state.push_char(' ');
+            state.push_char(' ');
+            assert_eq!(
+                state.clear_til_last_space(),
+                "\x08 \x08\x08 \x08\x08 \x08\x08 \x08\x08 \x08"
+            );
+            assert_eq!(state.into_password(), "abc ");
         }
 
         #[test]
@@ -248,6 +298,22 @@ mod tests {
             state.push_char('c');
             assert_eq!(state.clear(), "");
             assert!(state.is_empty());
+        }
+
+        #[test]
+        fn feedback_state_clear_til_last_space() {
+            let mut state = FeedbackState::new(PasswordFeedback::Mask('*'), false);
+            state.push_char('a');
+            state.push_char('b');
+            state.push_char('c');
+            state.push_char(' ');
+            state.push_char('d');
+            state.push_char('🚲');
+            state.push_char(' ');
+            state.push_char(' ');
+            state.push_char(' ');
+            assert_eq!(state.clear_til_last_space(), "");
+            assert_eq!(state.into_password(), "abc ");
         }
 
         #[test]

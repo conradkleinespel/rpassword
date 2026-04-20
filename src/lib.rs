@@ -71,6 +71,7 @@ const DEL: char = '\x7F';
 const CTRL_C: char = '\x03';
 const CTRL_D: char = '\x04';
 const CTRL_U: char = '\x15';
+const CTRL_W: char = '\x17';
 const ESC: char = '\x1B';
 
 trait RawPasswordInput {
@@ -122,6 +123,13 @@ trait RawPasswordInput {
                         self.write_output(output.as_str())?;
                     }
                 }
+                // Ctrl-W: clear to last space
+                CTRL_W => {
+                    let output = state.clear_til_last_space();
+                    if !output.is_empty() {
+                        self.write_output(output.as_str())?;
+                    }
+                }
                 // Ctrl-C: interrupt
                 CTRL_C => {
                     let output = state.abort();
@@ -143,7 +151,7 @@ trait RawPasswordInput {
                         ));
                     }
                 }
-                // ESC: consume and discard escape sequence
+                // ESC: consume and discard escape sequence like arrow keys
                 ESC => {
                     let c = match self.read_char() {
                         Ok(c) => c,
