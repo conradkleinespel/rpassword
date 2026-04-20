@@ -1,5 +1,5 @@
-use crate::DEFAULT_OUTPUT_PATH;
 use crate::DEFAULT_INPUT_PATH;
+use crate::DEFAULT_OUTPUT_PATH;
 
 /// Controls visual feedback when the user types a password.
 ///
@@ -178,10 +178,7 @@ impl ConfigBuilder {
 
     /// Sets the visual feedback for the password.
     pub fn password_feedback(self, feedback: PasswordFeedback) -> ConfigBuilder {
-        ConfigBuilder {
-            feedback,
-            ..self
-        }
+        ConfigBuilder { feedback, ..self }
     }
 
     /// Sets the path to the input and output files (defaults to the console).
@@ -203,7 +200,10 @@ impl ConfigBuilder {
                 _ => DEFAULT_INPUT_PATH.to_string(),
             },
             output_path: match self.input_output {
-                Some(ref v) => v.get_output_path().unwrap_or(DEFAULT_OUTPUT_PATH).to_string(),
+                Some(ref v) => v
+                    .get_output_path()
+                    .unwrap_or(DEFAULT_OUTPUT_PATH)
+                    .to_string(),
                 _ => DEFAULT_OUTPUT_PATH.to_string(),
             },
         }

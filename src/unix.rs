@@ -1,10 +1,10 @@
-use libc::{c_int, isatty, tcsetattr, termios, ECHO, ECHONL, ICANON, ISIG, TCSANOW, VMIN, VTIME};
+use crate::RawPasswordInput;
+use crate::config::Config;
+use libc::{ECHO, ECHONL, ICANON, ISIG, TCSANOW, VMIN, VTIME, c_int, isatty, tcsetattr, termios};
 use std::fs::File;
-use std::io::{self, Write, Read};
+use std::io::{self, Read, Write};
 use std::mem;
 use std::os::unix::io::AsRawFd;
-use crate::config::{Config};
-use crate::{RawPasswordInput};
 
 pub const DEFAULT_INPUT_PATH: &str = "/dev/tty";
 pub const DEFAULT_OUTPUT_PATH: &str = "/dev/tty";
@@ -18,9 +18,7 @@ fn io_result(ret: c_int) -> std::io::Result<()> {
 }
 
 fn is_interactive_terminal(fd: c_int) -> bool {
-    let result = unsafe {
-        isatty(fd) != 0
-    };
+    let result = unsafe { isatty(fd) != 0 };
     // For any non terminal, `isatty` produces ENOTTY, we clean it up
     unsafe {
         *libc::__errno_location() = 0;
@@ -35,7 +33,7 @@ fn safe_tcgetattr(fd: c_int) -> std::io::Result<termios> {
 }
 
 fn safe_tcsetattr(fd: c_int, term: &mut termios) -> std::io::Result<()> {
-    io_result(unsafe {tcsetattr(fd, TCSANOW, term)})
+    io_result(unsafe { tcsetattr(fd, TCSANOW, term) })
 }
 
 fn read_char(reader: &mut impl Read) -> std::io::Result<char> {
@@ -115,7 +113,11 @@ impl RawPasswordInput for RawModeInput {
         Ok(RawModeInput {
             input_file,
             output_file,
-            term_orig: if is_a_tty { Some(safe_tcgetattr(input_fd)?) } else { None },
+            term_orig: if is_a_tty {
+                Some(safe_tcgetattr(input_fd)?)
+            } else {
+                None
+            },
             needs_terminal_configuration: is_a_tty,
         })
     }
@@ -141,14 +143,12 @@ impl RawPasswordInput for RawModeInput {
     }
 
     fn write_output(&mut self, output: &str) -> std::io::Result<()> {
-    self.output_file.write_all(output.as_bytes())?;
+        self.output_file.write_all(output.as_bytes())?;
         self.output_file.flush()
     }
 
     fn send_signal_sigint(&mut self) -> io::Result<()> {
-        if unsafe {
-            libc::raise(libc::SIGINT) != 0
-        } {
+        if unsafe { libc::raise(libc::SIGINT) != 0 } {
             return Err(std::io::Error::last_os_error());
         }
         Ok(())
@@ -157,9 +157,9 @@ impl RawPasswordInput for RawModeInput {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
     use crate::config::{ConfigBuilder, InputOutput};
     use crate::read_password_with_config;
+    use std::io::Write;
 
     #[test]
     fn test_read_password_with_config() {
@@ -181,7 +181,9 @@ mod tests {
     #[test]
     fn test_read_password_with_config_errors_with_file_not_found() {
         let config = ConfigBuilder::new()
-            .input_output(InputOutput::InputOutputCombined("/does/not/exist".to_string()))
+            .input_output(InputOutput::InputOutputCombined(
+                "/does/not/exist".to_string(),
+            ))
             .build();
 
         // This should fail because the file does not exist

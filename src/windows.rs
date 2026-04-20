@@ -1,11 +1,14 @@
-use crate::config::{Config};
-use std::io;
-use windows_sys::Win32::Foundation::{
-    GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
-};
-use windows_sys::Win32::Storage::FileSystem::{CreateFileW, ReadFile, WriteFile, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING};
-use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, GetConsoleMode, ReadConsoleW, SetConsoleMode, WriteConsoleW, CONSOLE_MODE, CTRL_C_EVENT, ENABLE_PROCESSED_INPUT};
 use crate::RawPasswordInput;
+use crate::config::Config;
+use std::io;
+use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Storage::FileSystem::{
+    CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, ReadFile, WriteFile,
+};
+use windows_sys::Win32::System::Console::{
+    CONSOLE_MODE, CTRL_C_EVENT, ENABLE_PROCESSED_INPUT, GenerateConsoleCtrlEvent, GetConsoleMode,
+    ReadConsoleW, SetConsoleMode, WriteConsoleW,
+};
 
 pub const DEFAULT_INPUT_PATH: &str = "CONIN$";
 pub const DEFAULT_OUTPUT_PATH: &str = "CONOUT$";
@@ -29,7 +32,10 @@ fn get_console_mode(handle: HANDLE) -> io::Result<u32> {
 fn open_file(path: &str) -> io::Result<HANDLE> {
     let handle = unsafe {
         CreateFileW(
-            path.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>().as_ptr(),
+            path.encode_utf16()
+                .chain(std::iter::once(0))
+                .collect::<Vec<u16>>()
+                .as_ptr(),
             GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             std::ptr::null(),
@@ -83,7 +89,7 @@ fn read_char_from_console(handle: windows_sys::Win32::Foundation::HANDLE) -> io:
                     return Ok('\u{FFFD}');
                 }
                 return Err(e);
-            },
+            }
         };
         match char::decode_utf16([wchar1, wchar2])
             .next()
@@ -115,7 +121,8 @@ fn read_byte_from_file(handle: windows_sys::Win32::Foundation::HANDLE) -> io::Re
             buf_bytes.len() as u32,
             &mut bytes_read,
             std::ptr::null_mut(),
-        ) == 0 {
+        ) == 0
+        {
             return Err(io::Error::last_os_error());
         }
     }
@@ -148,7 +155,7 @@ fn read_char_from_file(handle: windows_sys::Win32::Foundation::HANDLE) -> io::Re
                 match read_byte_from_file(handle) {
                     Ok(next_byte) => {
                         utf8_buf.push(next_byte);
-                    },
+                    }
                     Err(e) => {
                         if e.kind() == io::ErrorKind::UnexpectedEof {
                             return Ok('\u{FFFD}');
@@ -173,8 +180,14 @@ fn read_char_from_file(handle: windows_sys::Win32::Foundation::HANDLE) -> io::Re
     }
 }
 
-fn write_output_to_console(handle: windows_sys::Win32::Foundation::HANDLE, output: &str) -> std::io::Result<()> {
-    let output_utf16 = output.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+fn write_output_to_console(
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    output: &str,
+) -> std::io::Result<()> {
+    let output_utf16 = output
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<u16>>();
     let mut wchars_written: u32 = 0;
     unsafe {
         if WriteConsoleW(
@@ -183,7 +196,8 @@ fn write_output_to_console(handle: windows_sys::Win32::Foundation::HANDLE, outpu
             output_utf16.len() as u32,
             &mut wchars_written,
             std::ptr::null_mut(),
-        ) == 0 {
+        ) == 0
+        {
             return Err(std::io::Error::last_os_error());
         }
     }
@@ -191,7 +205,10 @@ fn write_output_to_console(handle: windows_sys::Win32::Foundation::HANDLE, outpu
     Ok(())
 }
 
-fn write_output_to_file(handle: windows_sys::Win32::Foundation::HANDLE, output: &str) -> std::io::Result<()> {
+fn write_output_to_file(
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    output: &str,
+) -> std::io::Result<()> {
     let output_bytes = output.as_bytes();
     let mut bytes_written: u32 = 0;
     unsafe {
@@ -201,7 +218,8 @@ fn write_output_to_file(handle: windows_sys::Win32::Foundation::HANDLE, output: 
             output_bytes.len() as u32,
             &mut bytes_written,
             std::ptr::null_mut(),
-        ) == 0 {
+        ) == 0
+        {
             return Err(std::io::Error::last_os_error());
         }
     }
@@ -262,10 +280,14 @@ impl RawPasswordInput for RawModeInput {
             output_handle,
             input_mode: if is_a_tty {
                 get_console_mode(input_handle)?
-            } else { 0 },
+            } else {
+                0
+            },
             output_mode: if is_a_tty {
                 get_console_mode(output_handle)?
-            } else { 0 },
+            } else {
+                0
+            },
             needs_terminal_configuration: is_a_tty,
         })
     }
@@ -302,9 +324,7 @@ impl RawPasswordInput for RawModeInput {
     }
 
     fn send_signal_sigint(&mut self) -> io::Result<()> {
-        if unsafe {
-            GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)
-        } == 0 {
+        if unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0) } == 0 {
             return Err(std::io::Error::last_os_error());
         }
         Ok(())
@@ -313,9 +333,9 @@ impl RawPasswordInput for RawModeInput {
 
 #[cfg(test)]
 mod tests {
-    use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND};
-    use crate::{read_password_with_config, ConfigBuilder, InputOutput};
-    use std::io::{Write};
+    use crate::{ConfigBuilder, InputOutput, read_password_with_config};
+    use std::io::Write;
+    use windows_sys::Win32::Foundation::ERROR_FILE_NOT_FOUND;
 
     #[test]
     fn test_read_password_with_config() {
@@ -334,7 +354,9 @@ mod tests {
     #[test]
     fn test_read_password_with_config_errors_with_file_not_found() {
         let config = ConfigBuilder::new()
-            .input_output(InputOutput::InputOutputCombined("C:\\not-found.txt".to_string()))
+            .input_output(InputOutput::InputOutputCombined(
+                "C:\\not-found.txt".to_string(),
+            ))
             .build();
 
         // This should fail because it's not a Console (GetConsoleMode fails on regular files)

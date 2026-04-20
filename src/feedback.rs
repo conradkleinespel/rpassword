@@ -1,5 +1,5 @@
-use rtoolbox::safe_string::SafeString;
 use crate::config::PasswordFeedback;
+use rtoolbox::safe_string::SafeString;
 
 pub struct FeedbackState {
     password: SafeString,

@@ -1,8 +1,8 @@
-use std::fs::{OpenOptions};
-use std::io::{self, BufReader, BufRead};
-use rtoolbox::fix_line_issues::fix_line_issues;
-use crate::config::{Config};
 use crate::RawPasswordInput;
+use crate::config::Config;
+use rtoolbox::fix_line_issues::fix_line_issues;
+use std::fs::OpenOptions;
+use std::io::{self, BufRead, BufReader};
 
 pub const DEFAULT_INPUT_PATH: &str = "/dev/stdin";
 pub const DEFAULT_OUTPUT_PATH: &str = "/dev/stdout";
@@ -13,9 +13,7 @@ pub struct RawModeInput {
 
 impl RawPasswordInput for RawModeInput {
     fn new(config: Config) -> io::Result<impl RawPasswordInput> {
-        Ok(RawModeInput {
-            config
-        })
+        Ok(RawModeInput { config })
     }
 
     fn needs_terminal_configuration(&self) -> bool {
@@ -31,8 +29,13 @@ impl RawPasswordInput for RawModeInput {
         unimplemented!()
     }
 
-    fn read_password(&mut self, _password_feedback: crate::PasswordFeedback) -> std::io::Result<String> {
-        let input_file = OpenOptions::new().read(true).open(self.config.input_path.as_str())?;
+    fn read_password(
+        &mut self,
+        _password_feedback: crate::PasswordFeedback,
+    ) -> std::io::Result<String> {
+        let input_file = OpenOptions::new()
+            .read(true)
+            .open(self.config.input_path.as_str())?;
         let mut reader = BufReader::new(input_file);
         let mut line = String::new();
         reader.read_line(&mut line)?;
