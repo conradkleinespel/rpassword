@@ -39,12 +39,13 @@
 //! ```
 
 use rtoolbox::fix_line_issues::fix_line_issues;
-use rtoolbox::print_tty::{print_writer};
+use rtoolbox::print_tty::print_writer;
 use rtoolbox::safe_string::SafeString;
 use std::fs::OpenOptions;
 use std::io;
 use std::io::{BufRead, Write};
 
+mod config;
 mod feedback;
 
 #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
@@ -62,10 +63,8 @@ mod wasm;
 #[cfg(target_family = "wasm")]
 pub use wasm::*;
 
-mod config;
-
-pub use config::{InputOutput, PasswordFeedback, Config, ConfigBuilder};
 use crate::feedback::FeedbackState;
+pub use config::{Config, ConfigBuilder, InputOutput, PasswordFeedback};
 
 const BACKSPACE: char = '\x08';
 const DEL: char = '\x7F';
@@ -275,7 +274,6 @@ pub fn read_password() -> std::io::Result<String> {
     read_password_with_config(Config::default())
 }
 
-
 /// Prompts on the TTY and then reads a password from TTY
 pub fn prompt_password(prompt: impl ToString) -> std::io::Result<String> {
     prompt_password_with_config(prompt, ConfigBuilder::new().build())
@@ -323,5 +321,4 @@ mod tests {
         let response = read_password_from_bufread(&mut reader_lf).unwrap();
         assert_eq!(response, "Another mocked response.");
     }
-
 }

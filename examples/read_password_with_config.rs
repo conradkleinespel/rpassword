@@ -1,5 +1,5 @@
-use std::io::{self, Write};
 use rpassword::{ConfigBuilder, PasswordFeedback};
+use std::io::{self, Write};
 
 fn prompt(s: &str) {
     print!("{}", s);
