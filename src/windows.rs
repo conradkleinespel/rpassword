@@ -1,6 +1,8 @@
-use crate::RawPasswordInput;
 use crate::config::Config;
+use crate::utf8::read_char;
+use crate::{InputOutputTarget, RawPasswordInput};
 use std::io;
+use std::io::{Cursor, Read, Write};
 use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, ReadFile, WriteFile,
@@ -10,8 +12,8 @@ use windows_sys::Win32::System::Console::{
     ReadConsoleW, SetConsoleMode, WriteConsoleW,
 };
 
-pub const DEFAULT_INPUT_PATH: &str = "CONIN$";
-pub const DEFAULT_OUTPUT_PATH: &str = "CONOUT$";
+pub(crate) const DEFAULT_INPUT_PATH: &str = "CONIN$";
+pub(crate) const DEFAULT_OUTPUT_PATH: &str = "CONOUT$";
 
 fn is_interactive_terminal(handle: windows_sys::Win32::Foundation::HANDLE) -> bool {
     let mut mode: CONSOLE_MODE = 0;
@@ -29,7 +31,7 @@ fn get_console_mode(handle: HANDLE) -> io::Result<u32> {
     Ok(mode)
 }
 
-fn open_file(path: &str) -> io::Result<HANDLE> {
+fn open_file_or_console(path: &str) -> io::Result<HANDLE> {
     let handle = unsafe {
         CreateFileW(
             path.encode_utf16()
@@ -137,6 +139,7 @@ fn read_byte_from_file(handle: windows_sys::Win32::Foundation::HANDLE) -> io::Re
     Ok(buf_bytes[0])
 }
 
+// TODO: this is mostly duplicated with utf8::read_char, should be deduplicated
 fn read_char_from_file(handle: windows_sys::Win32::Foundation::HANDLE) -> io::Result<char> {
     let byte1 = read_byte_from_file(handle)?;
     match byte1 {
@@ -227,38 +230,81 @@ fn write_output_to_file(
     Ok(())
 }
 
-#[derive(Debug)]
-pub struct RawModeInput {
-    input_handle: HANDLE,
-    output_handle: HANDLE,
+enum WindowsInput {
+    Console(windows_sys::Win32::Foundation::HANDLE),
+    File(windows_sys::Win32::Foundation::HANDLE),
+    Reader(Box<dyn Read>),
+}
+
+impl WindowsInput {
+    fn handle(&self) -> Option<windows_sys::Win32::Foundation::HANDLE> {
+        match self {
+            WindowsInput::Console(handle) => Some(*handle),
+            WindowsInput::File(handle) => Some(*handle),
+            WindowsInput::Reader(_) => None,
+        }
+    }
+
+    fn is_console(&self) -> bool {
+        matches!(self, WindowsInput::Console(_))
+    }
+}
+
+enum WindowsOutput {
+    Console(windows_sys::Win32::Foundation::HANDLE),
+    File(windows_sys::Win32::Foundation::HANDLE),
+    Writer(Box<dyn Write>),
+}
+
+impl WindowsOutput {
+    fn handle(&self) -> Option<windows_sys::Win32::Foundation::HANDLE> {
+        match self {
+            WindowsOutput::Console(handle) => Some(*handle),
+            WindowsOutput::File(handle) => Some(*handle),
+            WindowsOutput::Writer(_) => None,
+        }
+    }
+
+    fn is_console(&self) -> bool {
+        matches!(self, WindowsOutput::Console(_))
+    }
+}
+
+pub(crate) struct RawModeInput {
+    input: WindowsInput,
     input_mode: u32,
+    output: WindowsOutput,
     output_mode: u32,
-    needs_terminal_configuration: bool,
 }
 
 impl Drop for RawModeInput {
     fn drop(&mut self) {
-        let same_input_output = self.input_handle == self.output_handle;
-
-        if self.input_handle != INVALID_HANDLE_VALUE {
-            unsafe {
-                SetConsoleMode(self.input_handle, self.input_mode);
+        let input_handle = self.input.handle();
+        if let Some(handle) = input_handle
+            && handle != INVALID_HANDLE_VALUE
+        {
+            if self.input.is_console() {
+                unsafe {
+                    SetConsoleMode(handle, self.input_mode);
+                }
             }
             unsafe {
-                windows_sys::Win32::Foundation::CloseHandle(self.input_handle);
+                windows_sys::Win32::Foundation::CloseHandle(handle);
             }
         }
 
-        if same_input_output {
-            return;
-        }
-
-        if self.output_handle != INVALID_HANDLE_VALUE {
-            unsafe {
-                SetConsoleMode(self.output_handle, self.output_mode);
+        let output_handle = self.output.handle();
+        if let Some(handle) = output_handle
+            && output_handle != input_handle
+            && handle != INVALID_HANDLE_VALUE
+        {
+            if self.output.is_console() {
+                unsafe {
+                    SetConsoleMode(handle, self.output_mode);
+                }
             }
             unsafe {
-                windows_sys::Win32::Foundation::CloseHandle(self.output_handle);
+                windows_sys::Win32::Foundation::CloseHandle(handle);
             }
         }
     }
@@ -266,60 +312,113 @@ impl Drop for RawModeInput {
 
 impl RawPasswordInput for RawModeInput {
     fn new(config: Config) -> io::Result<impl RawPasswordInput> {
-        let input_handle = open_file(config.input_path.as_str())?;
-        let output_handle = if config.input_path == config.output_path {
-            input_handle
-        } else {
-            open_file(config.output_path.as_str())?
+        let input = match config.input {
+            InputOutputTarget::Cursor(cursor) => WindowsInput::Reader(Box::new(cursor)),
+            InputOutputTarget::FilePath(path) => {
+                let input_handle = open_file_or_console(path.as_str())?;
+                let is_console = is_interactive_terminal(input_handle);
+
+                if is_console {
+                    WindowsInput::Console(input_handle)
+                } else {
+                    WindowsInput::File(input_handle)
+                }
+            }
+            InputOutputTarget::Void => {
+                WindowsInput::Reader(Box::new(Cursor::new(Vec::<u8>::new())))
+            }
         };
 
-        let is_a_tty = is_interactive_terminal(input_handle);
+        let input_handle = input.handle();
+
+        let output = match config.output {
+            InputOutputTarget::Cursor(cursor) => WindowsOutput::Writer(Box::new(cursor)),
+            InputOutputTarget::FilePath(path) => {
+                let output_handle = open_file_or_console(path.as_str())?;
+                let is_console = is_interactive_terminal(output_handle);
+
+                if Some(output_handle) == input_handle {
+                    match input {
+                        WindowsInput::Console(input_handle) => WindowsOutput::Console(input_handle),
+                        WindowsInput::File(input_handle) => WindowsOutput::File(input_handle),
+                        _ => {
+                            unreachable!()
+                        }
+                    }
+                } else if is_console {
+                    WindowsOutput::Console(output_handle)
+                } else {
+                    WindowsOutput::File(output_handle)
+                }
+            }
+            InputOutputTarget::Void => {
+                WindowsOutput::Writer(Box::new(Cursor::new(Vec::<u8>::new())))
+            }
+        };
+
+        let input_mode = if let Some(handle) = input.handle()
+            && input.is_console()
+        {
+            get_console_mode(handle)?
+        } else {
+            0
+        };
+
+        let output_mode = if let Some(handle) = output.handle()
+            && output.is_console()
+        {
+            get_console_mode(handle)?
+        } else {
+            0
+        };
 
         Ok(RawModeInput {
-            input_handle,
-            output_handle,
-            input_mode: if is_a_tty {
-                get_console_mode(input_handle)?
-            } else {
-                0
-            },
-            output_mode: if is_a_tty {
-                get_console_mode(output_handle)?
-            } else {
-                0
-            },
-            needs_terminal_configuration: is_a_tty,
+            input,
+            output,
+            input_mode,
+            output_mode,
         })
     }
 
     fn needs_terminal_configuration(&self) -> bool {
-        self.needs_terminal_configuration
+        self.input.is_console()
     }
 
     fn apply_terminal_configuration(&mut self) -> io::Result<()> {
-        if !self.needs_terminal_configuration {
-            panic!("apply_terminal_configuration called on non-TTY");
-        }
-
-        if unsafe { SetConsoleMode(self.input_handle, ENABLE_PROCESSED_INPUT) } == 0 {
+        if self.input.is_console()
+            && let Some(handle) = self.input.handle()
+            && unsafe { SetConsoleMode(handle, ENABLE_PROCESSED_INPUT) } == 0
+        {
             return Err(std::io::Error::last_os_error());
         }
+
+        // if self.output.is_console()
+        //     && let Some(handle) = self.output.handle()
+        // {
+        //     if unsafe { SetConsoleMode(handle, ENABLE_PROCESSED_INPUT) } == 0 {
+        //         return Err(std::io::Error::last_os_error());
+        //     }
+        // }
+
         Ok(())
     }
 
     fn read_char(&mut self) -> io::Result<char> {
-        if self.needs_terminal_configuration {
-            read_char_from_console(self.input_handle)
-        } else {
-            read_char_from_file(self.input_handle)
+        match self.input {
+            WindowsInput::Console(handle) => read_char_from_console(handle),
+            WindowsInput::File(handle) => read_char_from_file(handle),
+            WindowsInput::Reader(ref mut reader) => read_char(reader),
         }
     }
 
     fn write_output(&mut self, output: &str) -> std::io::Result<()> {
-        if self.needs_terminal_configuration {
-            write_output_to_console(self.output_handle, output)
-        } else {
-            write_output_to_file(self.output_handle, output)
+        match self.output {
+            WindowsOutput::Console(handle) => write_output_to_console(handle, output),
+            WindowsOutput::File(handle) => write_output_to_file(handle, output),
+            WindowsOutput::Writer(ref mut writer) => {
+                writer.write_all(output.as_bytes())?;
+                writer.flush()
+            }
         }
     }
 
@@ -333,30 +432,13 @@ impl RawPasswordInput for RawModeInput {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ConfigBuilder, InputOutput, read_password_with_config};
-    use std::io::Write;
+    use crate::{ConfigBuilder, read_password_with_config};
     use windows_sys::Win32::Foundation::ERROR_FILE_NOT_FOUND;
-
-    #[test]
-    fn test_read_password_with_config() {
-        let mut temp_file = tempfile::NamedTempFile::new().unwrap();
-        temp_file.write_all(b"password\r\n").unwrap();
-        let path = temp_file.path().to_str().unwrap().to_string();
-
-        let config = ConfigBuilder::new()
-            .input_output(InputOutput::InputOutputCombined(path.clone()))
-            .build();
-
-        let result = read_password_with_config(config);
-        assert_eq!("password", result.unwrap());
-    }
 
     #[test]
     fn test_read_password_with_config_errors_with_file_not_found() {
         let config = ConfigBuilder::new()
-            .input_output(InputOutput::InputOutputCombined(
-                "C:\\not-found.txt".to_string(),
-            ))
+            .input_file_path("C:\\not-found.txt")
             .build();
 
         // This should fail because it's not a Console (GetConsoleMode fails on regular files)

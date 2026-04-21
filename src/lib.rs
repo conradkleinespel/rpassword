@@ -15,21 +15,14 @@
 //!
 //! For testing or custom use-cases, you can use `read_password_with_config` and `prompt_password_with_config`:
 //! ```
-//! use tempfile::NamedTempFile;
-//! use std::io::Write;
-//! use rpassword::{PasswordFeedback, InputOutput};
-//!
-//! let mut input = NamedTempFile::new().unwrap();
-//! input.write_all(b"my-password\n").unwrap();
-//!
-//! let mut output = NamedTempFile::new().unwrap();
+//! use std::io::{Cursor, Write};
+//! use rpassword::{PasswordFeedback};
 //!
 //! let config = rpassword::ConfigBuilder::new()
-//!     // Default input/output is the console, but we can pass any file path
-//!     .input_output(InputOutput::InputOutput(
-//!         input.path().to_str().unwrap().to_string(),
-//!         output.path().to_str().unwrap().to_string(),
-//!     ))
+//!     // Default input is the console, but we can pass any file path or raw data
+//!     .input_data("my-password\n")
+//!     // Default output is the console, but we can also discard it
+//!     .output_discard()
 //!     // Default behavior is to hide the password as it's being typed, but we can change that
 //!     .password_feedback(PasswordFeedback::Mask('*'))
 //!     .build();
@@ -43,7 +36,7 @@ use rtoolbox::print_tty::print_writer;
 use rtoolbox::safe_string::SafeString;
 use std::fs::OpenOptions;
 use std::io;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Cursor, Write};
 
 mod config;
 mod feedback;
@@ -51,20 +44,23 @@ mod feedback;
 #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
 mod unix;
 #[cfg(all(target_family = "unix", not(target_family = "wasm")))]
-pub use unix::*;
+use unix::*;
 
 #[cfg(target_family = "windows")]
 mod windows;
 #[cfg(target_family = "windows")]
-pub use windows::*;
+use windows::*;
 
+mod utf8;
 #[cfg(target_family = "wasm")]
 mod wasm;
-#[cfg(target_family = "wasm")]
-pub use wasm::*;
 
+#[cfg(target_family = "wasm")]
+use wasm::*;
+
+use crate::config::InputOutputTarget;
 use crate::feedback::FeedbackState;
-pub use config::{Config, ConfigBuilder, InputOutput, PasswordFeedback};
+pub use config::{Config, ConfigBuilder, PasswordFeedback};
 
 const BACKSPACE: char = '\x08';
 const DEL: char = '\x7F';
@@ -203,17 +199,12 @@ trait RawPasswordInput {
 ///
 /// # Example of Updated Usage
 /// ```
-/// use tempfile::NamedTempFile;
-/// use std::io::Write;
-/// use rpassword::{ConfigBuilder, InputOutput, read_password_with_config};
-///
-/// let mut input = NamedTempFile::new().unwrap();
-/// input.write_all(b"my-password\n").unwrap();
+/// use std::io::{Cursor, Write};
+/// use rpassword::{read_password_with_config, ConfigBuilder};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output(InputOutput::InputOutputCombined(
-///         input.path().to_str().unwrap().to_string(),
-///     ))
+///     .input_data("my-password\n")
+///     .output_discard()
 ///     .build();
 ///
 /// let password = read_password_with_config(config).unwrap();
@@ -237,20 +228,14 @@ pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<
 ///
 /// # Example of Updated Usage
 /// ```
-/// use tempfile::NamedTempFile;
-/// use std::io::Write;
-/// use rpassword::{ConfigBuilder, InputOutput, prompt_password_with_config};
+/// use std::io::{Cursor, Write};
+/// use rpassword::{prompt_password_with_config, ConfigBuilder};
 ///
-/// let mut input = NamedTempFile::new().unwrap();
-/// input.write_all(b"my-password\n").unwrap();
-///
-/// let mut output = NamedTempFile::new().unwrap();
+/// let mut input = Cursor::new(b"my-password\n".to_vec());
 ///
 /// let config = ConfigBuilder::new()
-///     .input_output(InputOutput::InputOutput(
-///         input.path().to_str().unwrap().to_string(),
-///         output.path().to_str().unwrap().to_string(),
-///     ))
+///     .input_data("my-password\n")
+///     .output_discard()
 ///     .build();
 ///
 /// let password = prompt_password_with_config("Your password: ", config).unwrap();
@@ -279,7 +264,7 @@ pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
 
 /// Reads a password from the TTY
 pub fn read_password() -> std::io::Result<String> {
-    read_password_with_config(Config::default())
+    read_password_with_config(ConfigBuilder::default().build())
 }
 
 /// Prompts on the TTY and then reads a password from TTY
@@ -292,11 +277,14 @@ pub fn prompt_password_with_config(
     prompt: impl ToString,
     config: Config,
 ) -> std::io::Result<String> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .open(config.output_path.as_str())?;
-    file.write_all(prompt.to_string().as_bytes())?;
-    file.flush()?;
+    let mut output: Box<dyn Write> = match config.clone().output {
+        InputOutputTarget::Cursor(cursor) => Box::new(cursor),
+        InputOutputTarget::FilePath(path) => Box::new(OpenOptions::new().write(true).open(path)?),
+        InputOutputTarget::Void => Box::new(Cursor::new(Vec::<u8>::new())), // TODO: Should use a SafeVec instead
+    };
+
+    output.write_all(prompt.to_string().as_bytes())?;
+    output.flush()?;
     read_password_with_config(config)
 }
 
@@ -328,5 +316,31 @@ mod tests {
         assert_eq!(response, "A mocked response.");
         let response = read_password_from_bufread(&mut reader_lf).unwrap();
         assert_eq!(response, "Another mocked response.");
+    }
+
+    #[test]
+    fn test_read_password_with_config_with_input_file() {
+        let mut temp_file = tempfile::NamedTempFile::new().unwrap();
+        temp_file.write_all(b"password\n").unwrap();
+        let path = temp_file.path().to_str().unwrap().to_string();
+
+        let config = ConfigBuilder::new()
+            .input_file_path(path.as_str())
+            .output_discard()
+            .build();
+
+        let result = read_password_with_config(config);
+        assert_eq!("password", result.unwrap());
+    }
+
+    #[test]
+    fn test_read_password_with_config_with_input_cursor() {
+        let config = ConfigBuilder::new()
+            .input_data("hello world\x7F\x7F\x7F\n")
+            .output_discard()
+            .build();
+
+        let result = read_password_with_config(config);
+        assert_eq!("hello wo", result.unwrap());
     }
 }
