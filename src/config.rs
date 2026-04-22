@@ -3,40 +3,9 @@ use crate::DEFAULT_OUTPUT_PATH;
 use std::io::Cursor;
 
 /// Controls visual feedback when the user types a password.
-///
-/// Note: On Wasm, only `PasswordFeedback::Hide` is supported.
-///
-/// # Examples
-///
-/// ## Masking the password with asterisks
-/// ```
-/// use rpassword::{ConfigBuilder, PasswordFeedback};
-///
-/// let config = ConfigBuilder::new()
-///     .password_feedback(PasswordFeedback::Mask('*'))
-///     .build();
-/// ```
-///
-/// ## Showing first 3 characters in plaintext, then asterisks
-/// ```
-/// use rpassword::{ConfigBuilder, PasswordFeedback};
-///
-/// let config = ConfigBuilder::new()
-///     .password_feedback(PasswordFeedback::PartialMask('*', 3))
-///     .build();
-/// ```
-///
-/// ## Hiding the password entirely (default behavior)
-/// ```
-/// use rpassword::{ConfigBuilder, PasswordFeedback};
-///
-/// let config = ConfigBuilder::new()
-///     .password_feedback(PasswordFeedback::Hide)
-///     .build();
-/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]
-pub enum PasswordFeedback {
+pub(crate) enum PasswordFeedback {
     /// Show nothing while typing (current default behavior).
     #[default]
     Hide,
@@ -77,10 +46,12 @@ pub struct Config {
 ///
 /// ## Customising how the password is hidden
 /// ```
-/// use rpassword::{ConfigBuilder, PasswordFeedback};
+/// use rpassword::{ConfigBuilder};
 ///
 /// let config = ConfigBuilder::new()
-///     .password_feedback(PasswordFeedback::Mask('*'))
+///     .password_feedback_mask('*')
+///     .password_feedback_partial_mask('*', 3)
+///     .password_feedback_hide() // this is the default
 ///     .build();
 /// ```
 ///
@@ -132,15 +103,26 @@ impl ConfigBuilder {
         ConfigBuilder::default()
     }
 
-    /// Sets the visual feedback for the password.
-    pub fn password_feedback(self, feedback: PasswordFeedback) -> ConfigBuilder {
-        ConfigBuilder { feedback, ..self }
+    /// Sets the visual feedback to a mask with the given character.
+    pub fn password_feedback_mask(self, mask: char) -> ConfigBuilder {
+        ConfigBuilder {
+            feedback: PasswordFeedback::Mask(mask),
+            ..self
+        }
     }
 
-    /// Reads the passwords from the data.
-    pub fn input_data(self, data: impl Into<Vec<u8>>) -> ConfigBuilder {
+    /// Sets the visual feedback to a mask with the given character.
+    pub fn password_feedback_partial_mask(self, mask: char, length: usize) -> ConfigBuilder {
         ConfigBuilder {
-            input: InputOutputTarget::Cursor(Cursor::new(data.into())),
+            feedback: PasswordFeedback::PartialMask(mask, length),
+            ..self
+        }
+    }
+
+    /// Sets the visual feedback none, hides the password entirely.
+    pub fn password_feedback_hide(self) -> ConfigBuilder {
+        ConfigBuilder {
+            feedback: PasswordFeedback::Hide,
             ..self
         }
     }
@@ -149,6 +131,14 @@ impl ConfigBuilder {
     pub fn input_file_path(self, file_path: impl Into<String>) -> ConfigBuilder {
         ConfigBuilder {
             input: InputOutputTarget::FilePath(file_path.into()),
+            ..self
+        }
+    }
+
+    /// Reads the passwords from the data.
+    pub fn input_data(self, data: impl Into<Vec<u8>>) -> ConfigBuilder {
+        ConfigBuilder {
+            input: InputOutputTarget::Cursor(Cursor::new(data.into())),
             ..self
         }
     }

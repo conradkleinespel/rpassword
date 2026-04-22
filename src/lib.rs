@@ -16,7 +16,6 @@
 //! For testing or custom use-cases, you can use `read_password_with_config` and `prompt_password_with_config`:
 //! ```
 //! use std::io::{Cursor, Write};
-//! use rpassword::{PasswordFeedback};
 //!
 //! let config = rpassword::ConfigBuilder::new()
 //!     // Default input is the console, but we can pass any file path or raw data
@@ -24,7 +23,7 @@
 //!     // Default output is the console, but we can also discard it
 //!     .output_discard()
 //!     // Default behavior is to hide the password as it's being typed, but we can change that
-//!     .password_feedback(PasswordFeedback::Mask('*'))
+//!     .password_feedback_mask('*')
 //!     .build();
 //!
 //! let password = rpassword::read_password_with_config(config).unwrap();
@@ -58,9 +57,9 @@ mod wasm;
 #[cfg(target_family = "wasm")]
 use wasm::*;
 
-use crate::config::InputOutputTarget;
+use crate::config::{InputOutputTarget, PasswordFeedback};
 use crate::feedback::FeedbackState;
-pub use config::{Config, ConfigBuilder, PasswordFeedback};
+pub use config::{Config, ConfigBuilder};
 
 const BACKSPACE: char = '\x08';
 const DEL: char = '\x7F';
