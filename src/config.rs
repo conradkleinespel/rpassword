@@ -18,14 +18,20 @@ pub(crate) enum PasswordFeedback {
     PartialMask(char, usize),
 }
 
-/// Specifies the target for input or output operations.
+/// Specifies the source for input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum InputTarget {
+    FilePath(String),
+    Cursor(Cursor<Vec<u8>>),
+}
+
+/// Specifies the destination for output.
 ///
 /// This enum defines where input is read from or where output is written to.
 /// It supports file paths, in-memory cursors, or no input/output at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum InputOutputTarget {
+pub(crate) enum OutputTarget {
     FilePath(String),
-    Cursor(Cursor<Vec<u8>>),
     Void,
 }
 
@@ -33,8 +39,8 @@ pub(crate) enum InputOutputTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub(crate) password_feedback: PasswordFeedback,
-    pub(crate) input: InputOutputTarget,
-    pub(crate) output: InputOutputTarget,
+    pub(crate) input: InputTarget,
+    pub(crate) output: OutputTarget,
 }
 
 /// A builder for creating a [`Config`].
@@ -84,16 +90,16 @@ pub struct Config {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigBuilder {
     feedback: PasswordFeedback,
-    input: InputOutputTarget,
-    output: InputOutputTarget,
+    input: InputTarget,
+    output: OutputTarget,
 }
 
 impl Default for ConfigBuilder {
     fn default() -> Self {
         ConfigBuilder {
             feedback: PasswordFeedback::default(),
-            input: InputOutputTarget::FilePath(DEFAULT_INPUT_PATH.to_string()),
-            output: InputOutputTarget::FilePath(DEFAULT_OUTPUT_PATH.to_string()),
+            input: InputTarget::FilePath(DEFAULT_INPUT_PATH.to_string()),
+            output: OutputTarget::FilePath(DEFAULT_OUTPUT_PATH.to_string()),
         }
     }
 }
@@ -130,7 +136,7 @@ impl ConfigBuilder {
     /// Reads the password from the file at the given path.
     pub fn input_file_path(self, file_path: impl Into<String>) -> ConfigBuilder {
         ConfigBuilder {
-            input: InputOutputTarget::FilePath(file_path.into()),
+            input: InputTarget::FilePath(file_path.into()),
             ..self
         }
     }
@@ -138,7 +144,7 @@ impl ConfigBuilder {
     /// Reads the passwords from the data.
     pub fn input_data(self, data: impl Into<Vec<u8>>) -> ConfigBuilder {
         ConfigBuilder {
-            input: InputOutputTarget::Cursor(Cursor::new(data.into())),
+            input: InputTarget::Cursor(Cursor::new(data.into())),
             ..self
         }
     }
@@ -146,7 +152,7 @@ impl ConfigBuilder {
     /// Sends the output to the file at the given path.
     pub fn output_file_path(self, file_path: impl Into<String>) -> ConfigBuilder {
         ConfigBuilder {
-            output: InputOutputTarget::FilePath(file_path.into()),
+            output: OutputTarget::FilePath(file_path.into()),
             ..self
         }
     }
@@ -154,7 +160,7 @@ impl ConfigBuilder {
     /// Discards any output.
     pub fn output_discard(self) -> ConfigBuilder {
         ConfigBuilder {
-            output: InputOutputTarget::Void,
+            output: OutputTarget::Void,
             ..self
         }
     }

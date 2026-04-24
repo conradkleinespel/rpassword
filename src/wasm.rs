@@ -1,5 +1,5 @@
 use crate::RawPasswordInput;
-use crate::config::Config;
+use crate::config::{Config, InputTarget};
 use rtoolbox::fix_line_issues::fix_line_issues;
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, BufReader, Read};
@@ -34,13 +34,8 @@ impl RawPasswordInput for RawModeInput {
         _password_feedback: crate::PasswordFeedback,
     ) -> std::io::Result<String> {
         let input: Box<dyn Read> = match self.config.clone().input {
-            crate::InputOutputTarget::Cursor(cursor) => Box::new(cursor),
-            crate::InputOutputTarget::FilePath(path) => {
-                Box::new(OpenOptions::new().read(true).open(path)?)
-            }
-            crate::InputOutputTarget::Void => {
-                unimplemented!()
-            }
+            InputTarget::Cursor(cursor) => Box::new(cursor),
+            InputTarget::FilePath(path) => Box::new(OpenOptions::new().read(true).open(path)?),
         };
         let mut reader = BufReader::new(input);
         let mut line = String::new();

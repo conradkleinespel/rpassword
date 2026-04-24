@@ -57,7 +57,7 @@ mod wasm;
 #[cfg(target_family = "wasm")]
 use wasm::*;
 
-use crate::config::{InputOutputTarget, PasswordFeedback};
+use crate::config::{OutputTarget, PasswordFeedback};
 use crate::feedback::FeedbackState;
 pub use config::{Config, ConfigBuilder};
 
@@ -277,9 +277,8 @@ pub fn prompt_password_with_config(
     config: Config,
 ) -> std::io::Result<String> {
     let mut output: Box<dyn Write> = match config.clone().output {
-        InputOutputTarget::Cursor(cursor) => Box::new(cursor),
-        InputOutputTarget::FilePath(path) => Box::new(OpenOptions::new().write(true).open(path)?),
-        InputOutputTarget::Void => Box::new(Cursor::new(Vec::<u8>::new())), // TODO: Should use a SafeVec instead
+        OutputTarget::FilePath(path) => Box::new(OpenOptions::new().write(true).open(path)?),
+        OutputTarget::Void => Box::new(Cursor::new(Vec::<u8>::new())), // TODO: Should use a SafeVec instead
     };
 
     output.write_all(prompt.to_string().as_bytes())?;

@@ -1,6 +1,6 @@
-use crate::config::Config;
+use crate::RawPasswordInput;
+use crate::config::{Config, InputTarget, OutputTarget};
 use crate::utf8::read_char;
-use crate::{InputOutputTarget, RawPasswordInput};
 use std::io;
 use std::io::{Cursor, Read, Write};
 use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE};
@@ -313,8 +313,8 @@ impl Drop for RawModeInput {
 impl RawPasswordInput for RawModeInput {
     fn new(config: Config) -> io::Result<impl RawPasswordInput> {
         let input = match config.input {
-            InputOutputTarget::Cursor(cursor) => WindowsInput::Reader(Box::new(cursor)),
-            InputOutputTarget::FilePath(path) => {
+            InputTarget::Cursor(cursor) => WindowsInput::Reader(Box::new(cursor)),
+            InputTarget::FilePath(path) => {
                 let input_handle = open_file_or_console(path.as_str())?;
                 let is_console = is_interactive_terminal(input_handle);
 
@@ -324,16 +324,12 @@ impl RawPasswordInput for RawModeInput {
                     WindowsInput::File(input_handle)
                 }
             }
-            InputOutputTarget::Void => {
-                WindowsInput::Reader(Box::new(Cursor::new(Vec::<u8>::new())))
-            }
         };
 
         let input_handle = input.handle();
 
         let output = match config.output {
-            InputOutputTarget::Cursor(cursor) => WindowsOutput::Writer(Box::new(cursor)),
-            InputOutputTarget::FilePath(path) => {
+            OutputTarget::FilePath(path) => {
                 let output_handle = open_file_or_console(path.as_str())?;
                 let is_console = is_interactive_terminal(output_handle);
 
@@ -351,9 +347,7 @@ impl RawPasswordInput for RawModeInput {
                     WindowsOutput::File(output_handle)
                 }
             }
-            InputOutputTarget::Void => {
-                WindowsOutput::Writer(Box::new(Cursor::new(Vec::<u8>::new())))
-            }
+            OutputTarget::Void => WindowsOutput::Writer(Box::new(Cursor::new(Vec::<u8>::new()))),
         };
 
         let input_mode = if let Some(handle) = input.handle()

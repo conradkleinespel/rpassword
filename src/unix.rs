@@ -1,6 +1,6 @@
-use crate::config::Config;
+use crate::RawPasswordInput;
+use crate::config::{Config, InputTarget, OutputTarget};
 use crate::utf8::read_char;
-use crate::{InputOutputTarget, RawPasswordInput};
 use libc::{ECHO, ECHONL, ICANON, ISIG, TCSANOW, VMIN, VTIME, c_int, isatty, tcsetattr, termios};
 use std::fs::OpenOptions;
 use std::io::{self, Cursor, Read, Write};
@@ -72,13 +72,12 @@ impl RawPasswordInput for RawModeInput {
     fn new(config: Config) -> io::Result<impl RawPasswordInput> {
         let mut input_fd: Option<RawFd> = None;
         let input: Box<dyn Read> = match config.clone().input {
-            InputOutputTarget::Cursor(cursor) => Box::new(cursor),
-            InputOutputTarget::FilePath(path) => {
+            InputTarget::Cursor(cursor) => Box::new(cursor),
+            InputTarget::FilePath(path) => {
                 let file = OpenOptions::new().read(true).open(path)?;
                 input_fd = Some(file.as_raw_fd());
                 Box::new(file)
             }
-            InputOutputTarget::Void => Box::new(Cursor::new(Vec::<u8>::new())),
         };
         let input_is_tty = if let Some(fd) = input_fd {
             is_interactive_terminal(fd)
@@ -93,13 +92,12 @@ impl RawPasswordInput for RawModeInput {
 
         let mut output_fd: Option<RawFd> = None;
         let output: Box<dyn Write> = match config.clone().output {
-            InputOutputTarget::Cursor(cursor) => Box::new(cursor),
-            InputOutputTarget::FilePath(path) => {
+            OutputTarget::FilePath(path) => {
                 let file = OpenOptions::new().write(true).open(path)?;
                 output_fd = Some(file.as_raw_fd());
                 Box::new(file)
             }
-            InputOutputTarget::Void => Box::new(Cursor::new(Vec::<u8>::new())), // TODO: Should use a SafeVec instead
+            OutputTarget::Void => Box::new(Cursor::new(Vec::<u8>::new())), // TODO: Should use a SafeVec instead
         };
         let output_is_tty = if let Some(fd) = output_fd {
             is_interactive_terminal(fd)
