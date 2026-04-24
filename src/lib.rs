@@ -202,7 +202,7 @@ trait RawPasswordInput {
 /// use rpassword::{read_password_with_config, ConfigBuilder};
 ///
 /// let config = ConfigBuilder::new()
-///     .input_data("my-password\n")
+///     .input_reader(Cursor::new("my-password\n")) // anything that implements Read is OK here
 ///     .output_discard()
 ///     .build();
 ///
@@ -211,7 +211,7 @@ trait RawPasswordInput {
 /// ```
 #[deprecated(
     since = "7.5.0",
-    note = "Use `read_password_with_config` with a temporary file instead. See the example above for updated usage."
+    note = "Use `read_password_with_config` with `ConfigBuilder::input_reader` instead."
 )]
 pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<String> {
     let mut password = SafeString::new();
@@ -233,8 +233,8 @@ pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<
 /// let mut input = Cursor::new(b"my-password\n".to_vec());
 ///
 /// let config = ConfigBuilder::new()
-///     .input_data("my-password\n")
-///     .output_discard()
+///     .input_reader(Cursor::new("my-password\n")) // anything that implements Read is OK here
+///     .output_writer(Cursor::new(Vec::<u8>::new())) // anything that implements Write is OK here
 ///     .build();
 ///
 /// let password = prompt_password_with_config("Your password: ", config).unwrap();
@@ -242,7 +242,7 @@ pub fn read_password_from_bufread(reader: &mut impl BufRead) -> std::io::Result<
 /// ```
 #[deprecated(
     since = "7.5.0",
-    note = "Use `prompt_password_with_config` with a temporary file instead. See the example above for updated usage."
+    note = "Use `prompt_password_with_config` with `ConfigBuilder::input_reader` and `ConfigBuilder::output_writer()` instead."
 )]
 #[allow(deprecated)]
 pub fn prompt_password_from_bufread(
@@ -274,15 +274,20 @@ pub fn prompt_password(prompt: impl ToString) -> std::io::Result<String> {
 /// Prompts and then reads a password using the given config
 pub fn prompt_password_with_config(
     prompt: impl ToString,
-    config: Config,
+    mut config: Config,
 ) -> std::io::Result<String> {
-    let mut output: Box<dyn Write> = match config.clone().output {
-        OutputTarget::FilePath(path) => Box::new(OpenOptions::new().write(true).open(path)?),
-        OutputTarget::Void => Box::new(Cursor::new(Vec::<u8>::new())), // TODO: Should use a SafeVec instead
-    };
+    {
+        // Create an inner scope to allow using the config without moving it
+        // The mut ref to the config is dropped at the end of the scope
+        let mut output: Box<dyn Write> = match &mut config.output {
+            OutputTarget::FilePath(path) => Box::new(OpenOptions::new().write(true).open(path)?),
+            OutputTarget::Writer(writer) => Box::new(writer),
+            OutputTarget::Void => Box::new(Cursor::new(Vec::<u8>::new())), // TODO: Should use a SafeVec instead
+        };
+        output.write_all(prompt.to_string().as_bytes())?;
+        output.flush()?;
+    }
 
-    output.write_all(prompt.to_string().as_bytes())?;
-    output.flush()?;
     read_password_with_config(config)
 }
 

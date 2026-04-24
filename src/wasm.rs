@@ -33,9 +33,9 @@ impl RawPasswordInput for RawModeInput {
         &mut self,
         _password_feedback: crate::PasswordFeedback,
     ) -> std::io::Result<String> {
-        let input: Box<dyn Read> = match self.config.clone().input {
-            InputTarget::Cursor(cursor) => Box::new(cursor),
+        let input: Box<dyn Read> = match &mut self.config.input {
             InputTarget::FilePath(path) => Box::new(OpenOptions::new().read(true).open(path)?),
+            InputTarget::Reader(reader) => Box::new(reader),
         };
         let mut reader = BufReader::new(input);
         let mut line = String::new();

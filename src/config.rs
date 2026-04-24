@@ -1,6 +1,6 @@
 use crate::DEFAULT_INPUT_PATH;
 use crate::DEFAULT_OUTPUT_PATH;
-use std::io::Cursor;
+use std::io::{Cursor, Read, Write};
 
 /// Controls visual feedback when the user types a password.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -19,24 +19,24 @@ pub(crate) enum PasswordFeedback {
 }
 
 /// Specifies the source for input.
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum InputTarget {
     FilePath(String),
-    Cursor(Cursor<Vec<u8>>),
+    Reader(Box<dyn std::io::Read>),
 }
 
 /// Specifies the destination for output.
 ///
 /// This enum defines where input is read from or where output is written to.
 /// It supports file paths, in-memory cursors, or no input/output at all.
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum OutputTarget {
     FilePath(String),
+    Writer(Box<dyn std::io::Write>),
     Void,
 }
 
 /// Configuration for prompting and reading a password.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Obtained from `ConfigBuilder::build()`.
 pub struct Config {
     pub(crate) password_feedback: PasswordFeedback,
     pub(crate) input: InputTarget,
@@ -61,7 +61,7 @@ pub struct Config {
 ///     .build();
 /// ```
 ///
-/// ## Setting custom input file paths
+/// ## Setting custom input file path
 /// ```
 /// use rpassword::{ConfigBuilder};
 ///
@@ -79,6 +79,35 @@ pub struct Config {
 ///     .build();
 /// ```
 ///
+/// ## Reading from `impl Read`
+/// ```
+/// use std::io::Cursor;
+/// use rpassword::{ConfigBuilder};
+///
+/// let config = ConfigBuilder::new()
+///     .input_reader(Cursor::new("my-password\n"))
+///     .build();
+/// ```
+///
+/// ## Setting custom output file path
+/// ```
+/// use rpassword::{ConfigBuilder};
+///
+/// let config = ConfigBuilder::new()
+///     .output_file_path("path/to/file/for/prompt/output")
+///     .build();
+/// ```
+///
+/// ## Writing to `impl Write`
+/// ```
+/// use std::io::Cursor;
+/// use rpassword::{ConfigBuilder};
+///
+/// let config = ConfigBuilder::new()
+///     .output_writer(Cursor::new(Vec::<u8>::new()))
+///     .build();
+/// ```
+///
 /// ## Discarding output
 /// ```
 /// use rpassword::{ConfigBuilder};
@@ -87,7 +116,6 @@ pub struct Config {
 ///     .output_discard()
 ///     .build();
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigBuilder {
     feedback: PasswordFeedback,
     input: InputTarget,
@@ -144,7 +172,15 @@ impl ConfigBuilder {
     /// Reads the passwords from the data.
     pub fn input_data(self, data: impl Into<Vec<u8>>) -> ConfigBuilder {
         ConfigBuilder {
-            input: InputTarget::Cursor(Cursor::new(data.into())),
+            input: InputTarget::Reader(Box::new(Cursor::new(data.into()))),
+            ..self
+        }
+    }
+
+    /// Reads the passwords from a custom Read implementation.
+    pub fn input_reader(self, reader: impl Read + 'static) -> ConfigBuilder {
+        ConfigBuilder {
+            input: InputTarget::Reader(Box::new(reader)),
             ..self
         }
     }
@@ -153,6 +189,14 @@ impl ConfigBuilder {
     pub fn output_file_path(self, file_path: impl Into<String>) -> ConfigBuilder {
         ConfigBuilder {
             output: OutputTarget::FilePath(file_path.into()),
+            ..self
+        }
+    }
+
+    /// Sends output to a custom Write implementation.
+    pub fn output_writer(self, writer: impl Write + 'static) -> ConfigBuilder {
+        ConfigBuilder {
+            output: OutputTarget::Writer(Box::new(writer)),
             ..self
         }
     }

@@ -313,7 +313,6 @@ impl Drop for RawModeInput {
 impl RawPasswordInput for RawModeInput {
     fn new(config: Config) -> io::Result<impl RawPasswordInput> {
         let input = match config.input {
-            InputTarget::Cursor(cursor) => WindowsInput::Reader(Box::new(cursor)),
             InputTarget::FilePath(path) => {
                 let input_handle = open_file_or_console(path.as_str())?;
                 let is_console = is_interactive_terminal(input_handle);
@@ -324,6 +323,7 @@ impl RawPasswordInput for RawModeInput {
                     WindowsInput::File(input_handle)
                 }
             }
+            InputTarget::Reader(reader) => WindowsInput::Reader(reader),
         };
 
         let input_handle = input.handle();
@@ -347,6 +347,7 @@ impl RawPasswordInput for RawModeInput {
                     WindowsOutput::File(output_handle)
                 }
             }
+            OutputTarget::Writer(writer) => WindowsOutput::Writer(Box::new(writer)),
             OutputTarget::Void => WindowsOutput::Writer(Box::new(Cursor::new(Vec::<u8>::new()))),
         };
 
