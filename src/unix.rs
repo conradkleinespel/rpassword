@@ -22,6 +22,8 @@ fn io_result(ret: c_int) -> std::io::Result<()> {
 fn is_interactive_terminal(fd: c_int) -> bool {
     let result = unsafe { isatty(fd) != 0 };
     // For any non terminal, `isatty` produces ENOTTY, we clean it up
+    // Note: errno clearing is only supported on Linux via __errno_location()
+    #[cfg(target_os = "linux")]
     unsafe {
         *libc::__errno_location() = 0;
     };
