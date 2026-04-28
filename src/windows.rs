@@ -387,14 +387,6 @@ impl RawPasswordInput for RawModeInput {
             return Err(std::io::Error::last_os_error());
         }
 
-        // if self.output.is_console()
-        //     && let Some(handle) = self.output.handle()
-        // {
-        //     if unsafe { SetConsoleMode(handle, ENABLE_PROCESSED_INPUT) } == 0 {
-        //         return Err(std::io::Error::last_os_error());
-        //     }
-        // }
-
         Ok(())
     }
 
