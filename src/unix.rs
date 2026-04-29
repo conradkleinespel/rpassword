@@ -20,12 +20,7 @@ fn io_result(ret: c_int) -> std::io::Result<()> {
 }
 
 fn is_interactive_terminal(fd: c_int) -> bool {
-    let result = unsafe { isatty(fd) != 0 };
-    // For any non terminal, `isatty` produces ENOTTY, we clean it up
-    unsafe {
-        *libc::__errno_location() = 0;
-    };
-    result
+    unsafe { isatty(fd) != 0 }
 }
 
 fn safe_tcgetattr(fd: c_int) -> std::io::Result<termios> {
