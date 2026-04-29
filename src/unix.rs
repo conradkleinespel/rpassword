@@ -19,12 +19,26 @@ fn io_result(ret: c_int) -> std::io::Result<()> {
     }
 }
 
+#[cfg(target_vendor = "apple")]
+fn errno_location() -> *mut c_int {
+    unsafe { libc::__error() }
+}
+
+#[cfg(not(target_vendor = "apple"))]
+fn errno_location() -> *mut c_int {
+    unsafe { libc::__errno_location() }
+}
+
+fn clear_errno() {
+    unsafe {
+        *errno_location() = 0;
+    }
+}
+
 fn is_interactive_terminal(fd: c_int) -> bool {
     let result = unsafe { isatty(fd) != 0 };
     // For any non terminal, `isatty` produces ENOTTY, we clean it up
-    unsafe {
-        *libc::__errno_location() = 0;
-    };
+    clear_errno();
     result
 }
 
