@@ -14,12 +14,14 @@ pub fn read_char(reader: &mut impl Read) -> std::io::Result<char> {
         // ASCII
         0x00..=0x7F => Ok(byte[0] as char),
         // UTF-8 lead byte
-        0xC0..=0xF7 => {
+        0xC2..=0xF4 => {
             let width = match byte[0] {
-                0xC0..=0xDF => 2,
+                0xC2..=0xDF => 2,
                 0xE0..=0xEF => 3,
-                0xF0..=0xF7 => 4,
-                _ => unreachable!(),
+                0xF0..=0xF4 => 4,
+                _ => {
+                    return Ok('\u{FFFD}');
+                }
             };
             let mut utf8_buf = vec![byte[0]];
             for _ in 1..width {
