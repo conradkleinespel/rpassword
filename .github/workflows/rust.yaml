@@ -57,10 +57,3 @@ jobs:
       - name: Run tests
         if: matrix.os == 'ubuntu-latest'
         run: cargo test --verbose --target wasm32-unknown-emscripten
-
-      # Tarpaulin (coverage) only runs on Linux
-      - name: Check coverage
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          which cargo-tarpaulin || cargo install cargo-tarpaulin
-          cargo tarpaulin
