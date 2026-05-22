@@ -46,16 +46,12 @@ pub(crate) struct RawModeInput {
 
 impl Drop for RawModeInput {
     fn drop(&mut self) {
-        if let Some(fd) = self.input_fd
-            && let Some(ref mut term_orig) = self.input_term_orig
-        {
+        if let (Some(fd), Some(term_orig)) = (self.input_fd, self.input_term_orig.as_mut()) {
             unsafe {
                 tcsetattr(fd, TCSANOW, term_orig);
             }
         }
-        if let Some(fd) = self.output_fd
-            && let Some(ref mut term_orig) = self.output_term_orig
-        {
+        if let (Some(fd), Some(term_orig)) = (self.output_fd, self.output_term_orig.as_mut()) {
             unsafe {
                 tcsetattr(fd, TCSANOW, term_orig);
             }
@@ -79,8 +75,12 @@ impl RawPasswordInput for RawModeInput {
         } else {
             false
         };
-        let input_term_orig = if input_is_tty && let Some(fd) = input_fd {
-            Some(safe_tcgetattr(fd)?)
+        let input_term_orig = if input_is_tty {
+            if let Some(fd) = input_fd {
+                Some(safe_tcgetattr(fd)?)
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -100,8 +100,12 @@ impl RawPasswordInput for RawModeInput {
         } else {
             false
         };
-        let output_term_orig = if output_is_tty && let Some(fd) = output_fd {
-            Some(safe_tcgetattr(fd)?)
+        let output_term_orig = if output_is_tty {
+            if let Some(fd) = output_fd {
+                Some(safe_tcgetattr(fd)?)
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -123,24 +127,24 @@ impl RawPasswordInput for RawModeInput {
     }
 
     fn apply_terminal_configuration(&mut self) -> io::Result<()> {
-        if self.input_is_tty
-            && let Some(fd) = self.input_fd
-        {
-            let mut term = safe_tcgetattr(fd)?;
-            term.c_lflag &= !(ECHO | ICANON | ECHONL | ISIG);
-            term.c_cc[VMIN] = 1;
-            term.c_cc[VTIME] = 0;
-            safe_tcsetattr(fd, &mut term)?;
+        if self.input_is_tty {
+            if let Some(fd) = self.input_fd {
+                let mut term = safe_tcgetattr(fd)?;
+                term.c_lflag &= !(ECHO | ICANON | ECHONL | ISIG);
+                term.c_cc[VMIN] = 1;
+                term.c_cc[VTIME] = 0;
+                safe_tcsetattr(fd, &mut term)?;
+            }
         }
 
-        if self.output_is_tty
-            && let Some(fd) = self.output_fd
-        {
-            let mut term = safe_tcgetattr(fd)?;
-            term.c_lflag &= !(ECHO | ICANON | ECHONL | ISIG);
-            term.c_cc[VMIN] = 1;
-            term.c_cc[VTIME] = 0;
-            safe_tcsetattr(fd, &mut term)?;
+        if self.output_is_tty {
+            if let Some(fd) = self.output_fd {
+                let mut term = safe_tcgetattr(fd)?;
+                term.c_lflag &= !(ECHO | ICANON | ECHONL | ISIG);
+                term.c_cc[VMIN] = 1;
+                term.c_cc[VTIME] = 0;
+                safe_tcsetattr(fd, &mut term)?;
+            }
         }
 
         Ok(())

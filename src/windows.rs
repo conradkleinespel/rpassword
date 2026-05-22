@@ -280,31 +280,30 @@ pub(crate) struct RawModeInput {
 impl Drop for RawModeInput {
     fn drop(&mut self) {
         let input_handle = self.input.handle();
-        if let Some(handle) = input_handle
-            && handle != INVALID_HANDLE_VALUE
-        {
-            if self.input.is_console() {
-                unsafe {
-                    SetConsoleMode(handle, self.input_mode);
+        if let Some(handle) = input_handle {
+            if handle != INVALID_HANDLE_VALUE {
+                if self.input.is_console() {
+                    unsafe {
+                        SetConsoleMode(handle, self.input_mode);
+                    }
                 }
-            }
-            unsafe {
-                windows_sys::Win32::Foundation::CloseHandle(handle);
+                unsafe {
+                    windows_sys::Win32::Foundation::CloseHandle(handle);
+                }
             }
         }
 
         let output_handle = self.output.handle();
-        if let Some(handle) = output_handle
-            && output_handle != input_handle
-            && handle != INVALID_HANDLE_VALUE
-        {
-            if self.output.is_console() {
-                unsafe {
-                    SetConsoleMode(handle, self.output_mode);
+        if let Some(handle) = output_handle {
+            if output_handle != input_handle && handle != INVALID_HANDLE_VALUE {
+                if self.output.is_console() {
+                    unsafe {
+                        SetConsoleMode(handle, self.output_mode);
+                    }
                 }
-            }
-            unsafe {
-                windows_sys::Win32::Foundation::CloseHandle(handle);
+                unsafe {
+                    windows_sys::Win32::Foundation::CloseHandle(handle);
+                }
             }
         }
     }
@@ -351,17 +350,13 @@ impl RawPasswordInput for RawModeInput {
             OutputTarget::Void => WindowsOutput::Writer(Box::new(Cursor::new(Vec::<u8>::new()))),
         };
 
-        let input_mode = if let Some(handle) = input.handle()
-            && input.is_console()
-        {
+        let input_mode = if let (Some(handle), true) = (input.handle(), input.is_console()) {
             get_console_mode(handle)?
         } else {
             0
         };
 
-        let output_mode = if let Some(handle) = output.handle()
-            && output.is_console()
-        {
+        let output_mode = if let (Some(handle), true) = (output.handle(), output.is_console()) {
             get_console_mode(handle)?
         } else {
             0
@@ -380,11 +375,12 @@ impl RawPasswordInput for RawModeInput {
     }
 
     fn apply_terminal_configuration(&mut self) -> io::Result<()> {
-        if self.input.is_console()
-            && let Some(handle) = self.input.handle()
-            && unsafe { SetConsoleMode(handle, ENABLE_PROCESSED_INPUT) } == 0
-        {
-            return Err(std::io::Error::last_os_error());
+        if self.input.is_console() {
+            if let Some(handle) = self.input.handle() {
+                if unsafe { SetConsoleMode(handle, ENABLE_PROCESSED_INPUT) } == 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+            }
         }
 
         Ok(())
