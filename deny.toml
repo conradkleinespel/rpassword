@@ -1,0 +1,15 @@
+[licenses]
+allow = [
+    "Apache-2.0",
+]
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+

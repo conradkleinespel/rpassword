@@ -2,13 +2,14 @@
 pkgs.mkShell {
   nativeBuildInputs = with pkgs; [
     rustup
-    pkgsCross.mingwW64.stdenv.cc
+    #pkgsCross.mingwW64.stdenv.cc
     wineWowPackages.stable
     emscripten
   ];
   buildInputs = with pkgs; [
-    pkgsCross.mingwW64.windows.pthreads
+    #pkgsCross.mingwW64.windows.pthreads
     nodejs
+    podman
   ];
   shellHook = ''
     git config set core.hooksPath githooks

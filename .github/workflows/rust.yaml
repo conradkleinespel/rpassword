@@ -27,9 +27,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain
+        if: matrix.os == 'ubuntu-latest'
         uses: dtolnay/rust-toolchain@1.85
         with:
           targets: wasm32-unknown-emscripten
+
+      - name: Install Rust toolchain
+        if: matrix.os == 'windows-latest'
+        uses: dtolnay/rust-toolchain@1.85
 
       # Cache cargo dependencies
       - uses: actions/cache@v4
@@ -57,3 +62,19 @@ jobs:
       - name: Run tests
         if: matrix.os == 'ubuntu-latest'
         run: cargo test --verbose --target wasm32-unknown-emscripten
+
+      - name: Install Rust toolchain for additional cargo tooling
+        if: matrix.os == 'ubuntu-latest'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          which cargo-tarpaulin || cargo install cargo-tarpaulin
+          cargo tarpaulin
+
+      - name: Check licenses
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          which cargo-deny || cargo install cargo-deny
+          cargo deny check licenses
