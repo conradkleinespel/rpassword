@@ -46,17 +46,24 @@ pub(crate) struct RawModeInput {
 
 impl Drop for RawModeInput {
     fn drop(&mut self) {
-        if let (Some(fd), Some(term_orig)) = (self.input_fd, self.input_term_orig.as_mut()) {
-            unsafe {
-                tcsetattr(fd, TCSANOW, term_orig);
-            }
-        }
-        if let (Some(fd), Some(term_orig)) = (self.output_fd, self.output_term_orig.as_mut()) {
-            unsafe {
-                tcsetattr(fd, TCSANOW, term_orig);
-            }
-        }
+        let _ = self.restore_terminal_configuration();
     }
+}
+
+impl RawModeInput {
+    fn restore_terminal_configuration(&mut self) -> io::Result<()> {
+        let input = restore_terminal(self.input_fd, &mut self.input_term_orig);
+        let output = restore_terminal(self.output_fd, &mut self.output_term_orig);
+        input.and(output)
+    }
+}
+
+fn restore_terminal(fd: Option<RawFd>, original: &mut Option<termios>) -> io::Result<()> {
+    if let (Some(fd), Some(term)) = (fd, original.as_mut()) {
+        safe_tcsetattr(fd, term)?;
+        *original = None;
+    }
+    Ok(())
 }
 
 impl RawPasswordInput for RawModeInput {
@@ -160,6 +167,7 @@ impl RawPasswordInput for RawModeInput {
     }
 
     fn send_signal_sigint(&mut self) -> io::Result<()> {
+        self.restore_terminal_configuration()?;
         if unsafe { libc::raise(libc::SIGINT) != 0 } {
             return Err(std::io::Error::last_os_error());
         }
