@@ -4,6 +4,6 @@ fn main() {
     println!("=== prompt_password() ===");
     match prompt_password("Password: ") {
         Ok(pass) => println!("You entered: '{}'", pass),
-        Err(e) => eprintln!("Error: {}", e),
+        Err(e) => eprintln!("Error prompting for a password on the terminal: {}", e),
     }
 }

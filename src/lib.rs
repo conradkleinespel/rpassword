@@ -262,11 +262,22 @@ pub fn read_password_with_config(config: Config) -> std::io::Result<String> {
 }
 
 /// Reads a password from the TTY
+///
+/// On Unix this opens `/dev/tty`, even when stdin is redirected. A process without
+/// a controlling terminal cannot use the default input. The returned error is the
+/// original operating system error; it does not include the terminal path.
+/// Use [`read_password_with_config`] with an explicit input and output for
+/// non-interactive use. Reader inputs do not configure terminal echo.
 pub fn read_password() -> std::io::Result<String> {
     read_password_with_config(ConfigBuilder::default().build())
 }
 
 /// Prompts on the TTY and then reads a password from TTY
+///
+/// On Unix both the prompt and password use `/dev/tty`, even when stdin or stdout
+/// is redirected. A process without a controlling terminal cannot use these
+/// defaults. Use [`prompt_password_with_config`] with an explicit input and output
+/// for non-interactive use. Reader inputs do not configure terminal echo.
 pub fn prompt_password(prompt: impl ToString) -> std::io::Result<String> {
     prompt_password_with_config(prompt, ConfigBuilder::new().build())
 }
