@@ -3,7 +3,7 @@ pkgs.mkShell {
   nativeBuildInputs = with pkgs; [
     rustup
     #pkgsCross.mingwW64.stdenv.cc
-    wineWowPackages.stable
+    wineWow64Packages.stable
     emscripten
   ];
   buildInputs = with pkgs; [
