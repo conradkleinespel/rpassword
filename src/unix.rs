@@ -46,6 +46,12 @@ pub(crate) struct RawModeInput {
 
 impl Drop for RawModeInput {
     fn drop(&mut self) {
+        self.restore_terminal_configuration();
+    }
+}
+
+impl RawModeInput {
+    fn restore_terminal_configuration(&mut self) {
         if let (Some(fd), Some(term_orig)) = (self.input_fd, self.input_term_orig.as_mut()) {
             unsafe {
                 tcsetattr(fd, TCSANOW, term_orig);
@@ -160,6 +166,8 @@ impl RawPasswordInput for RawModeInput {
     }
 
     fn send_signal_sigint(&mut self) -> io::Result<()> {
+        // With the default SIGINT action, the process ends inside raise, so Drop never runs.
+        self.restore_terminal_configuration();
         if unsafe { libc::raise(libc::SIGINT) != 0 } {
             return Err(std::io::Error::last_os_error());
         }
