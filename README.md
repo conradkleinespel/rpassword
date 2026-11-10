@@ -40,6 +40,38 @@ fn main() {
 
 See examples and docs at [https://docs.rs/rpassword](https://docs.rs/rpassword).
 
+## Running without a controlling terminal
+
+On Unix, `read_password()` and `prompt_password()` use `/dev/tty`, not stdin.
+Redirecting stdin does not remove an existing controlling terminal. A process
+started without one, such as a detached job or some CI jobs, cannot open
+`/dev/tty`; the functions return the operating system's `std::io::Error`. For
+example, macOS reports `Device not configured (os error 6)`. A missing or
+inaccessible terminal device can also prevent these calls from working.
+
+Choose the input and output explicitly for non-interactive use. For example, if
+your application deliberately reads its password from piped stdin:
+
+```rust,no_run
+use rpassword::{ConfigBuilder, read_password_with_config};
+
+fn main() -> std::io::Result<()> {
+    let config = ConfigBuilder::new()
+        .input_reader(std::io::stdin())
+        .output_discard()
+        .build();
+    let _password = read_password_with_config(config)?;
+    // Use the password without printing it.
+    Ok(())
+}
+```
+
+This is an explicit choice, not an automatic fallback. Reader inputs do not
+configure terminal echo, so this example is intended for piped input, not a
+hidden interactive prompt. If stdin already carries your application's data,
+choose a different password source. For `prompt_password_with_config`, also
+configure the output: its default output still uses the terminal.
+
 See the upgrade path in [UPGRADE.md](UPGRADE.md).
 
 ## License

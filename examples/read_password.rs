@@ -11,6 +11,6 @@ fn main() {
     prompt("Password: ");
     match read_password() {
         Ok(pass) => println!("You entered: '{}'", pass),
-        Err(e) => eprintln!("Error: {}", e),
+        Err(e) => eprintln!("Error reading a password from the terminal: {}", e),
     }
 }
