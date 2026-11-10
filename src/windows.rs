@@ -279,14 +279,11 @@ pub(crate) struct RawModeInput {
 
 impl Drop for RawModeInput {
     fn drop(&mut self) {
+        self.restore_terminal_configuration();
+
         let input_handle = self.input.handle();
         if let Some(handle) = input_handle {
             if handle != INVALID_HANDLE_VALUE {
-                if self.input.is_console() {
-                    unsafe {
-                        SetConsoleMode(handle, self.input_mode);
-                    }
-                }
                 unsafe {
                     windows_sys::Win32::Foundation::CloseHandle(handle);
                 }
@@ -296,13 +293,33 @@ impl Drop for RawModeInput {
         let output_handle = self.output.handle();
         if let Some(handle) = output_handle {
             if output_handle != input_handle && handle != INVALID_HANDLE_VALUE {
-                if self.output.is_console() {
-                    unsafe {
-                        SetConsoleMode(handle, self.output_mode);
-                    }
-                }
                 unsafe {
                     windows_sys::Win32::Foundation::CloseHandle(handle);
+                }
+            }
+        }
+    }
+}
+
+impl RawModeInput {
+    fn restore_terminal_configuration(&mut self) {
+        let input_handle = self.input.handle();
+        if let Some(handle) = input_handle {
+            if handle != INVALID_HANDLE_VALUE && self.input.is_console() {
+                unsafe {
+                    SetConsoleMode(handle, self.input_mode);
+                }
+            }
+        }
+
+        let output_handle = self.output.handle();
+        if let Some(handle) = output_handle {
+            if output_handle != input_handle
+                && handle != INVALID_HANDLE_VALUE
+                && self.output.is_console()
+            {
+                unsafe {
+                    SetConsoleMode(handle, self.output_mode);
                 }
             }
         }
@@ -406,6 +423,9 @@ impl RawPasswordInput for RawModeInput {
     }
 
     fn send_signal_sigint(&mut self) -> io::Result<()> {
+        // With the default CTRL_C_EVENT action, the process ends inside GenerateConsoleCtrlEvent,
+        // so Drop never runs.
+        self.restore_terminal_configuration();
         if unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0) } == 0 {
             return Err(std::io::Error::last_os_error());
         }
